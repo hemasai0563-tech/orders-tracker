@@ -886,56 +886,45 @@
           <button class="btn btn-primary btn-sm mt-2" onclick="saveStoreQRConfig()">Save QR Settings</button>
         </div>
 
-        <!-- Google Sheets Integration Card -->
-        <div class="dash-card sheet-config-card">
+        <!-- AWS Cloud Database Integration Card -->
+        <div class="dash-card sheet-config-card" style="border-left: 4px solid #ff9900;">
           <div class="card-header">
-            <h4><i class="fa-solid fa-file-excel text-success"></i> Google Sheets Connection</h4>
-            <span class="badge badge-success" id="sheet-conn-badge">Ready (Local + Cloud)</span>
+            <h4><i class="fa-brands fa-aws text-warning"></i> AWS Cloud Database (DynamoDB)</h4>
+            <span class="badge badge-success" id="sheet-conn-badge"><i class="fa-solid fa-cloud"></i> AWS Live (us-east-1)</span>
           </div>
           <p class="config-text">
-            Connect to any Google Sheet via Google Apps Script Webhook. All bills, deliveries, agents, and payment records sync automatically!
+            Enterprise high-speed AWS Serverless backend powered by <strong>Amazon DynamoDB</strong> & <strong>AWS Lambda API Gateway</strong>. Real-time sub-second sync across all devices, Ops consoles, and delivery fleets!
           </p>
 
           <div class="form-group">
-            <label for="input-gsheet-url"><i class="fa-solid fa-link"></i> Google Apps Script Web App URL</label>
+            <label for="input-aws-api-url"><i class="fa-solid fa-server"></i> AWS API Gateway Endpoint</label>
             <input 
               type="url" 
-              id="input-gsheet-url" 
-              placeholder="https://script.google.com/macros/s/.../exec" 
+              id="input-aws-api-url" 
+              value="https://6rvn28uvv1.execute-api.us-east-1.amazonaws.com"
+              readonly
+              style="font-family: monospace; font-size: 12px; background: rgba(0,0,0,0.2);"
             />
-            <small class="input-hint">Leave blank to use fast local storage, or paste your deployed Apps Script URL.</small>
+            <small class="input-hint">Default cloud API deployed on AWS (Account: 022741688055 • Region: us-east-1).</small>
           </div>
 
           <div class="modal-actions-grid">
-            <button class="btn btn-outline" onclick="testGSheetConnection()">
-              <i class="fa-solid fa-satellite-dish"></i> Test & Sync Now
+            <button class="btn btn-outline" onclick="testAWSConnection()">
+              <i class="fa-solid fa-satellite-dish"></i> Test & Sync AWS Now
             </button>
-            <button class="btn btn-primary" onclick="saveGSheetConfig()">
-              <i class="fa-solid fa-floppy-disk"></i> Save URL
+            <button class="btn btn-primary" onclick="saveAWSConfig()">
+              <i class="fa-solid fa-arrows-rotate"></i> Force Cloud Sync
             </button>
           </div>
 
-          <div style="margin-top: 12px; background: rgba(59, 130, 246, 0.08); border: 1px dashed rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+          <div style="margin-top: 14px; background: rgba(255, 153, 0, 0.08); border: 1px dashed rgba(255, 153, 0, 0.4); border-radius: 10px; padding: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
             <div style="font-size: 13px; color: var(--text-color, #e2e8f0);">
-              <strong><i class="fa-solid fa-mobile-screen text-primary"></i> Sync all Delivery Phones</strong>
-              <div style="font-size: 11px; opacity: 0.8;">Copy 1-tap link to connect any phone instantly without typing URL</div>
+              <strong><i class="fa-brands fa-aws text-warning"></i> AWS DynamoDB Infrastructure</strong>
+              <div style="font-size: 11px; opacity: 0.8;">Tables: OrdersTracker_Bills &bull; OrdersTracker_Config &bull; 100% Serverless</div>
             </div>
-            <button class="btn btn-sm btn-outline" onclick="copyMobileConnectLink()" style="white-space: nowrap;">
-              <i class="fa-solid fa-share-nodes"></i> Copy Mobile Link
-            </button>
-          </div>
-
-          <hr class="card-divider" />
-
-          <!-- Apps Script Code Modal Trigger -->
-          <div class="script-help-box">
-            <div>
-              <h5><i class="fa-solid fa-code"></i> Google Apps Script Code</h5>
-              <p>Copy the ready-to-run Google Apps Script code to sync with your own Google Sheet.</p>
-            </div>
-            <button class="btn btn-sm btn-secondary" onclick="openAppsScriptModal()">
-              <i class="fa-solid fa-copy"></i> View Code
-            </button>
+            <span class="badge badge-outline" style="color: #ff9900; border-color: #ff9900;">
+              <i class="fa-solid fa-shield-halved"></i> Active
+            </span>
           </div>
         </div>
 

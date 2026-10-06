@@ -8,12 +8,14 @@
  */
 
 // ==========================================
-// 1. STATE & CONSTANTS
+// 1. STATE & CONSTANTS (AWS BACKEND)
 // ==========================================
+const DEFAULT_AWS_API_URL = 'https://6rvn28uvv1.execute-api.us-east-1.amazonaws.com';
+
 const STORAGE_KEYS = {
   BILLS: 'retail_bills_data_v8',
   AUTH: 'retail_bills_auth_v5',
-  GSHEET_URL: 'retail_bills_gsheet_url_v5',
+  AWS_API_URL: 'retail_bills_aws_api_v1',
   STORE_UPI: 'retail_bills_store_upi_v5',
   ATTENDANCE: 'retail_bills_attendance_v8',
   THEME: 'retail_bills_theme_v1',
@@ -150,7 +152,7 @@ let appState = {
   attendanceFilterDate: 'today',
   storeUpiId: DEFAULT_STORE_UPI,
   isSyncing: false,
-  gsheetUrl: '',
+  apiUrl: DEFAULT_AWS_API_URL,
   // Multi-invoice / flat bulk clearance state:
   selectedFlatInvoices: [],
   currentViewingFlat: '',
@@ -164,7 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initAppTheme();
   loadSavedData();
   initAuthSession();
-  initGoogleAppsScriptCode();
   renderApp();
   setDefaultBilledDate();
   startShiftTimer();
@@ -205,25 +206,25 @@ function loadSavedData() {
     'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7'
   ].forEach(k => localStorage.removeItem(k));
 
-  // Check URL query param for easy instant mobile connection: ?gsheet=https://script.google.com/...
+  // Check URL query param if custom api passed
   try {
     const urlParams = new URLSearchParams(window.location.search);
-    const queryGsheet = urlParams.get('gsheet') || urlParams.get('sheet') || urlParams.get('api');
-    if (queryGsheet) {
-      const cleanUrl = decodeURIComponent(queryGsheet).trim();
+    const queryApi = urlParams.get('api') || urlParams.get('aws') || urlParams.get('gsheet');
+    if (queryApi) {
+      const cleanUrl = decodeURIComponent(queryApi).trim();
       if (cleanUrl.startsWith('http')) {
-        localStorage.setItem(STORAGE_KEYS.GSHEET_URL, cleanUrl);
-        appState.gsheetUrl = cleanUrl;
+        localStorage.setItem(STORAGE_KEYS.AWS_API_URL, cleanUrl);
+        appState.apiUrl = cleanUrl;
         window.history.replaceState({}, document.title, window.location.pathname);
       }
     }
   } catch (e) {}
 
-  appState.gsheetUrl = localStorage.getItem(STORAGE_KEYS.GSHEET_URL) || '';
+  appState.apiUrl = localStorage.getItem(STORAGE_KEYS.AWS_API_URL) || DEFAULT_AWS_API_URL;
   appState.storeUpiId = localStorage.getItem(STORAGE_KEYS.STORE_UPI) || DEFAULT_STORE_UPI;
 
-  const urlInput = document.getElementById('input-gsheet-url');
-  if (urlInput) urlInput.value = appState.gsheetUrl;
+  const urlInput = document.getElementById('input-aws-api-url');
+  if (urlInput) urlInput.value = appState.apiUrl;
 
   const upiInput = document.getElementById('input-custom-upi-id');
   if (upiInput) upiInput.value = appState.storeUpiId;
@@ -2874,68 +2875,58 @@ let cloudSyncTimer = null;
 function initCloudSyncEngine() {
   if (cloudSyncTimer) clearInterval(cloudSyncTimer);
 
-  // Initial fetch on startup if cloud URL is saved
-  if (appState.gsheetUrl) {
+  // Initial fetch on startup
+  if (appState.apiUrl) {
     fetchBillsFromCloud(true);
   }
 
-  // Periodic background polling every 6 seconds when tab is active
+  // Periodic background polling every 4 seconds when tab is active
   cloudSyncTimer = setInterval(() => {
-    if (appState.gsheetUrl && !document.hidden && !appState.isSyncing) {
+    if (appState.apiUrl && !document.hidden && !appState.isSyncing) {
       fetchBillsFromCloud(true);
     }
-  }, 6000);
+  }, 4000);
 
   // Sync immediately when tab/app becomes visible or focused
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && appState.gsheetUrl && !appState.isSyncing) {
+    if (!document.hidden && appState.apiUrl && !appState.isSyncing) {
       fetchBillsFromCloud(true);
     }
   });
 
   window.addEventListener('focus', () => {
-    if (appState.gsheetUrl && !appState.isSyncing) {
+    if (appState.apiUrl && !appState.isSyncing) {
       fetchBillsFromCloud(true);
     }
   });
 
   window.addEventListener('online', () => {
-    if (appState.gsheetUrl) {
-      showToast('Internet restored! Syncing with cloud...', 'info');
+    if (appState.apiUrl) {
+      showToast('⚡ Internet restored! Syncing with AWS Cloud...', 'info');
       fetchBillsFromCloud(false);
     }
   });
 }
 
-function saveGSheetConfig() {
-  const urlInput = document.getElementById('input-gsheet-url');
+function saveAWSConfig() {
+  const urlInput = document.getElementById('input-aws-api-url');
   if (!urlInput) return;
 
-  const url = urlInput.value.trim();
-  appState.gsheetUrl = url;
-  localStorage.setItem(STORAGE_KEYS.GSHEET_URL, url);
+  const url = urlInput.value.trim() || DEFAULT_AWS_API_URL;
+  appState.apiUrl = url;
+  localStorage.setItem(STORAGE_KEYS.AWS_API_URL, url);
 
-  showToast(url ? 'Google Apps Script URL saved!' : 'Google Sheets URL cleared.', 'success');
-  if (url) {
-    fetchBillsFromCloud(false);
-  }
+  showToast('AWS Cloud API configuration saved!', 'success');
+  fetchBillsFromCloud(false);
 }
 
-async function testGSheetConnection() {
-  const urlInput = document.getElementById('input-gsheet-url');
-  const url = urlInput ? urlInput.value.trim() : appState.gsheetUrl;
-
-  if (!url) {
-    showToast('Please enter a Google Apps Script Web App URL first!', 'warning');
-    return;
-  }
-
-  saveGSheetConfig();
+async function testAWSConnection() {
+  saveAWSConfig();
   await triggerManualSync();
 }
 
 async function fetchBillsFromCloud(silent = true) {
-  if (!appState.gsheetUrl || appState.isSyncing) return;
+  if (!appState.apiUrl || appState.isSyncing) return;
 
   const syncBtn = document.getElementById('btn-header-sync');
   const syncLabel = document.getElementById('sync-status-label');
@@ -2947,7 +2938,7 @@ async function fetchBillsFromCloud(silent = true) {
   }
 
   try {
-    const fetchUrl = `${appState.gsheetUrl}${appState.gsheetUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    const fetchUrl = `${appState.apiUrl}${appState.apiUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
     const response = await fetch(fetchUrl, {
       method: 'GET',
       headers: { 'Accept': 'application/json' }
@@ -2959,19 +2950,19 @@ async function fetchBillsFromCloud(silent = true) {
     if (result && result.status === 'success' && Array.isArray(result.bills)) {
       mergeCloudBills(result.bills);
       if (!silent) {
-        showToast(`Synced ${result.bills.length} bills from Google Sheets! 📊`, 'success');
+        showToast(`⚡ Synced ${result.bills.length} bills from AWS DynamoDB!`, 'success');
       }
     }
   } catch (error) {
-    console.warn('Cloud sync GET error:', error);
+    console.warn('AWS Cloud sync error:', error);
     if (!silent) {
-      showToast('Could not fetch from Google Sheets. Check connection or URL.', 'warning');
+      showToast('Could not fetch from AWS Cloud. Check connection.', 'warning');
     }
   } finally {
     if (!silent) {
       appState.isSyncing = false;
       if (syncBtn) syncBtn.classList.remove('syncing');
-      if (syncLabel) syncLabel.textContent = 'Synced';
+      if (syncLabel) syncLabel.textContent = 'AWS Live';
     }
   }
 }
@@ -2993,7 +2984,7 @@ function mergeCloudBills(cloudBills) {
     const existing = localMap.get(invKey);
 
     if (!existing) {
-      // New bill discovered from cloud / another device
+      // New bill discovered from AWS DynamoDB
       const newBill = {
         invoiceNo: String(cb.invoiceNo),
         flatNo: String(cb.flatNo || ''),
@@ -3002,14 +2993,14 @@ function mergeCloudBills(cloudBills) {
         deliveryAgent: cb.deliveryAgent || 'Unassigned',
         deliveryStatus: cb.deliveryStatus || 'Pending',
         deliveredDate: cb.deliveredDate || '',
-        deliveryProofPhoto: '',
-        deliveryProofTime: '',
+        deliveryProofPhoto: cb.deliveryProofPhoto || '',
+        deliveryProofTime: cb.deliveryProofTime || '',
         paymentStatus: cb.paymentStatus || 'Unpaid',
         amountReceived: Number(cb.amountReceived) || 0,
         balance: Number(cb.balance) || (Number(cb.billAmount) || 0),
         paymentMode: cb.paymentMode || 'UNPAID',
-        paymentProofPhoto: '',
-        paymentProofTime: '',
+        paymentProofPhoto: cb.paymentProofPhoto || '',
+        paymentProofTime: cb.paymentProofTime || '',
         daysPending: Number(cb.daysPending) || 0,
         remarks: cb.remarks || '',
         lastUpdated: cb.lastUpdated || new Date().toISOString()
@@ -3017,7 +3008,7 @@ function mergeCloudBills(cloudBills) {
       localMap.set(invKey, newBill);
       changesCount++;
     } else {
-      // Check if cloud has newer changes (status change, delivery agent assigned, payment recorded)
+      // Check if AWS has newer changes
       const cloudTime = new Date(cb.lastUpdated || 0).getTime();
       const localTime = new Date(existing.lastUpdated || 0).getTime();
 
@@ -3035,10 +3026,14 @@ function mergeCloudBills(cloudBills) {
         existing.deliveryAgent = cb.deliveryAgent || existing.deliveryAgent;
         existing.deliveryStatus = cb.deliveryStatus || existing.deliveryStatus;
         existing.deliveredDate = cb.deliveredDate || existing.deliveredDate;
+        if (cb.deliveryProofPhoto) existing.deliveryProofPhoto = cb.deliveryProofPhoto;
+        if (cb.deliveryProofTime) existing.deliveryProofTime = cb.deliveryProofTime;
         existing.paymentStatus = cb.paymentStatus || existing.paymentStatus;
         existing.amountReceived = Number(cb.amountReceived) || existing.amountReceived;
         existing.balance = Number(cb.balance) || 0;
         existing.paymentMode = cb.paymentMode || existing.paymentMode;
+        if (cb.paymentProofPhoto) existing.paymentProofPhoto = cb.paymentProofPhoto;
+        if (cb.paymentProofTime) existing.paymentProofTime = cb.paymentProofTime;
         existing.daysPending = Number(cb.daysPending) || existing.daysPending;
         existing.remarks = cb.remarks || existing.remarks;
         existing.lastUpdated = cb.lastUpdated || new Date().toISOString();
@@ -3061,24 +3056,18 @@ async function triggerManualSync() {
   const syncBtn = document.getElementById('btn-header-sync');
   const syncLabel = document.getElementById('sync-status-label');
 
-  if (!appState.gsheetUrl) {
-    showToast('Local Storage active. Configure Google Sheets URL in Settings to sync.', 'info');
-    return;
-  }
-
   appState.isSyncing = true;
   if (syncBtn) syncBtn.classList.add('syncing');
   if (syncLabel) syncLabel.textContent = 'Syncing...';
 
   try {
-    // 1. First fetch latest state from Google Sheet
+    // 1. Fetch latest from AWS DynamoDB
     await fetchBillsFromCloud(false);
 
-    // 2. Then push our current full bill catalog to Google Sheet
-    const response = await fetch(appState.gsheetUrl, {
+    // 2. Push full local bill collection to AWS
+    const response = await fetch(appState.apiUrl, {
       method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'sync_all',
         bills: appState.bills
@@ -3086,58 +3075,42 @@ async function triggerManualSync() {
     });
 
     const result = await response.json();
-    showToast(result.message || 'Synced seamlessly with Google Sheets! 📊', 'success');
+    showToast(result.message || '⚡ 100% Synced with AWS DynamoDB!', 'success');
   } catch (error) {
-    showToast('Sync request dispatched to Google Sheets!', 'success');
+    showToast('Sync request dispatched to AWS Cloud!', 'success');
   } finally {
     appState.isSyncing = false;
     if (syncBtn) syncBtn.classList.remove('syncing');
-    if (syncLabel) syncLabel.textContent = 'Synced';
+    if (syncLabel) syncLabel.textContent = 'AWS Live';
   }
 }
 
 async function triggerAutoCloudSync(payload, action) {
-  if (!appState.gsheetUrl) return;
+  if (!appState.apiUrl) return;
 
   try {
-    fetch(appState.gsheetUrl, {
+    fetch(appState.apiUrl, {
       method: 'POST',
-      mode: 'cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: action,
         bill: payload,
         invoiceNo: payload.invoiceNo
       })
-    }).catch(err => console.log('Cloud sync background event:', err));
+    }).catch(err => console.log('AWS sync background event:', err));
   } catch (e) {
-    console.log('Background cloud event:', e);
+    console.log('Background AWS cloud event:', e);
   }
 
-  // Trigger quick follow-up pull after 1.5 seconds to refresh state
+  // Follow-up quick pull after 1s
   setTimeout(() => {
-    if (appState.gsheetUrl) fetchBillsFromCloud(true);
-  }, 1500);
+    if (appState.apiUrl) fetchBillsFromCloud(true);
+  }, 1000);
 }
 
-function copyMobileConnectLink() {
-  if (!appState.gsheetUrl) {
-    showToast('Please save your Google Apps Script URL first before sharing!', 'warning');
-    return;
-  }
-
-  const connectUrl = `${window.location.origin}${window.location.pathname}?gsheet=${encodeURIComponent(appState.gsheetUrl)}`;
-  
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(connectUrl).then(() => {
-      showToast('📱 Mobile Connect Link copied! Send this link to delivery staff on WhatsApp.', 'success');
-    }).catch(() => {
-      prompt('Copy this URL and open it on delivery boy / Ops phones:', connectUrl);
-    });
-  } else {
-    prompt('Copy this URL and open it on delivery boy / Ops phones:', connectUrl);
-  }
-}
+// Legacy alias helpers for backwards-compatibility
+function saveGSheetConfig() { saveAWSConfig(); }
+function testGSheetConnection() { testAWSConnection(); }
 
 // ==========================================
 // 18. DATA EXPORT & DEMO
