@@ -168,6 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderApp();
   setDefaultBilledDate();
   startShiftTimer();
+  initCloudSyncEngine();
 });
 
 function initAppTheme() {
@@ -203,6 +204,20 @@ function loadSavedData() {
     'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7',
     'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7'
   ].forEach(k => localStorage.removeItem(k));
+
+  // Check URL query param for easy instant mobile connection: ?gsheet=https://script.google.com/...
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryGsheet = urlParams.get('gsheet') || urlParams.get('sheet') || urlParams.get('api');
+    if (queryGsheet) {
+      const cleanUrl = decodeURIComponent(queryGsheet).trim();
+      if (cleanUrl.startsWith('http')) {
+        localStorage.setItem(STORAGE_KEYS.GSHEET_URL, cleanUrl);
+        appState.gsheetUrl = cleanUrl;
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  } catch (e) {}
 
   appState.gsheetUrl = localStorage.getItem(STORAGE_KEYS.GSHEET_URL) || '';
   appState.storeUpiId = localStorage.getItem(STORAGE_KEYS.STORE_UPI) || DEFAULT_STORE_UPI;
@@ -1012,6 +1027,10 @@ function navigateToScreen(screenId) {
   if (mainScroll) mainScroll.scrollTop = 0;
 
   renderCurrentScreen();
+
+  if (appState.gsheetUrl) {
+    fetchBillsFromCloud(true);
+  }
 }
 
 function renderApp() {
@@ -2850,6 +2869,44 @@ function copyAppsScriptCode() {
   }
 }
 
+let cloudSyncTimer = null;
+
+function initCloudSyncEngine() {
+  if (cloudSyncTimer) clearInterval(cloudSyncTimer);
+
+  // Initial fetch on startup if cloud URL is saved
+  if (appState.gsheetUrl) {
+    fetchBillsFromCloud(true);
+  }
+
+  // Periodic background polling every 6 seconds when tab is active
+  cloudSyncTimer = setInterval(() => {
+    if (appState.gsheetUrl && !document.hidden && !appState.isSyncing) {
+      fetchBillsFromCloud(true);
+    }
+  }, 6000);
+
+  // Sync immediately when tab/app becomes visible or focused
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && appState.gsheetUrl && !appState.isSyncing) {
+      fetchBillsFromCloud(true);
+    }
+  });
+
+  window.addEventListener('focus', () => {
+    if (appState.gsheetUrl && !appState.isSyncing) {
+      fetchBillsFromCloud(true);
+    }
+  });
+
+  window.addEventListener('online', () => {
+    if (appState.gsheetUrl) {
+      showToast('Internet restored! Syncing with cloud...', 'info');
+      fetchBillsFromCloud(false);
+    }
+  });
+}
+
 function saveGSheetConfig() {
   const urlInput = document.getElementById('input-gsheet-url');
   if (!urlInput) return;
@@ -2860,7 +2917,7 @@ function saveGSheetConfig() {
 
   showToast(url ? 'Google Apps Script URL saved!' : 'Google Sheets URL cleared.', 'success');
   if (url) {
-    triggerManualSync();
+    fetchBillsFromCloud(false);
   }
 }
 
@@ -2875,6 +2932,128 @@ async function testGSheetConnection() {
 
   saveGSheetConfig();
   await triggerManualSync();
+}
+
+async function fetchBillsFromCloud(silent = true) {
+  if (!appState.gsheetUrl || appState.isSyncing) return;
+
+  const syncBtn = document.getElementById('btn-header-sync');
+  const syncLabel = document.getElementById('sync-status-label');
+
+  if (!silent) {
+    appState.isSyncing = true;
+    if (syncBtn) syncBtn.classList.add('syncing');
+    if (syncLabel) syncLabel.textContent = 'Syncing...';
+  }
+
+  try {
+    const fetchUrl = `${appState.gsheetUrl}${appState.gsheetUrl.includes('?') ? '&' : '?'}t=${Date.now()}`;
+    const response = await fetch(fetchUrl, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+
+    if (result && result.status === 'success' && Array.isArray(result.bills)) {
+      mergeCloudBills(result.bills);
+      if (!silent) {
+        showToast(`Synced ${result.bills.length} bills from Google Sheets! 📊`, 'success');
+      }
+    }
+  } catch (error) {
+    console.warn('Cloud sync GET error:', error);
+    if (!silent) {
+      showToast('Could not fetch from Google Sheets. Check connection or URL.', 'warning');
+    }
+  } finally {
+    if (!silent) {
+      appState.isSyncing = false;
+      if (syncBtn) syncBtn.classList.remove('syncing');
+      if (syncLabel) syncLabel.textContent = 'Synced';
+    }
+  }
+}
+
+function mergeCloudBills(cloudBills) {
+  if (!Array.isArray(cloudBills)) return;
+
+  let changesCount = 0;
+  const localMap = new Map();
+  appState.bills.forEach(b => {
+    if (b && b.invoiceNo) {
+      localMap.set(String(b.invoiceNo).trim().toUpperCase(), b);
+    }
+  });
+
+  cloudBills.forEach(cb => {
+    if (!cb || !cb.invoiceNo) return;
+    const invKey = String(cb.invoiceNo).trim().toUpperCase();
+    const existing = localMap.get(invKey);
+
+    if (!existing) {
+      // New bill discovered from cloud / another device
+      const newBill = {
+        invoiceNo: String(cb.invoiceNo),
+        flatNo: String(cb.flatNo || ''),
+        billAmount: Number(cb.billAmount) || 0,
+        billedDate: cb.billedDate || getTodayISODate(),
+        deliveryAgent: cb.deliveryAgent || 'Unassigned',
+        deliveryStatus: cb.deliveryStatus || 'Pending',
+        deliveredDate: cb.deliveredDate || '',
+        deliveryProofPhoto: '',
+        deliveryProofTime: '',
+        paymentStatus: cb.paymentStatus || 'Unpaid',
+        amountReceived: Number(cb.amountReceived) || 0,
+        balance: Number(cb.balance) || (Number(cb.billAmount) || 0),
+        paymentMode: cb.paymentMode || 'UNPAID',
+        paymentProofPhoto: '',
+        paymentProofTime: '',
+        daysPending: Number(cb.daysPending) || 0,
+        remarks: cb.remarks || '',
+        lastUpdated: cb.lastUpdated || new Date().toISOString()
+      };
+      localMap.set(invKey, newBill);
+      changesCount++;
+    } else {
+      // Check if cloud has newer changes (status change, delivery agent assigned, payment recorded)
+      const cloudTime = new Date(cb.lastUpdated || 0).getTime();
+      const localTime = new Date(existing.lastUpdated || 0).getTime();
+
+      const hasFieldDifferences = 
+        existing.deliveryStatus !== (cb.deliveryStatus || existing.deliveryStatus) ||
+        existing.paymentStatus !== (cb.paymentStatus || existing.paymentStatus) ||
+        existing.deliveryAgent !== (cb.deliveryAgent || existing.deliveryAgent) ||
+        Number(existing.billAmount) !== Number(cb.billAmount) ||
+        Number(existing.amountReceived) !== Number(cb.amountReceived);
+
+      if (cloudTime > localTime || hasFieldDifferences) {
+        existing.flatNo = cb.flatNo || existing.flatNo;
+        existing.billAmount = Number(cb.billAmount) || existing.billAmount;
+        existing.billedDate = cb.billedDate || existing.billedDate;
+        existing.deliveryAgent = cb.deliveryAgent || existing.deliveryAgent;
+        existing.deliveryStatus = cb.deliveryStatus || existing.deliveryStatus;
+        existing.deliveredDate = cb.deliveredDate || existing.deliveredDate;
+        existing.paymentStatus = cb.paymentStatus || existing.paymentStatus;
+        existing.amountReceived = Number(cb.amountReceived) || existing.amountReceived;
+        existing.balance = Number(cb.balance) || 0;
+        existing.paymentMode = cb.paymentMode || existing.paymentMode;
+        existing.daysPending = Number(cb.daysPending) || existing.daysPending;
+        existing.remarks = cb.remarks || existing.remarks;
+        existing.lastUpdated = cb.lastUpdated || new Date().toISOString();
+        changesCount++;
+      }
+    }
+  });
+
+  if (changesCount > 0) {
+    appState.bills = Array.from(localMap.values());
+    recalculateAllBills();
+    saveBillsToLocal();
+    updateBadgeCounts();
+    renderCurrentScreen();
+  }
 }
 
 async function triggerManualSync() {
@@ -2892,6 +3071,10 @@ async function triggerManualSync() {
   if (syncLabel) syncLabel.textContent = 'Syncing...';
 
   try {
+    // 1. First fetch latest state from Google Sheet
+    await fetchBillsFromCloud(false);
+
+    // 2. Then push our current full bill catalog to Google Sheet
     const response = await fetch(appState.gsheetUrl, {
       method: 'POST',
       mode: 'cors',
@@ -2903,13 +3086,9 @@ async function triggerManualSync() {
     });
 
     const result = await response.json();
-    if (result.status === 'success') {
-      showToast('Synced seamlessly with Google Sheets! 📊', 'success');
-    } else {
-      showToast('Google Sheets: ' + (result.message || 'Synced'), 'success');
-    }
+    showToast(result.message || 'Synced seamlessly with Google Sheets! 📊', 'success');
   } catch (error) {
-    showToast('Sync request sent to Google Sheets!', 'success');
+    showToast('Sync request dispatched to Google Sheets!', 'success');
   } finally {
     appState.isSyncing = false;
     if (syncBtn) syncBtn.classList.remove('syncing');
@@ -2933,6 +3112,30 @@ async function triggerAutoCloudSync(payload, action) {
     }).catch(err => console.log('Cloud sync background event:', err));
   } catch (e) {
     console.log('Background cloud event:', e);
+  }
+
+  // Trigger quick follow-up pull after 1.5 seconds to refresh state
+  setTimeout(() => {
+    if (appState.gsheetUrl) fetchBillsFromCloud(true);
+  }, 1500);
+}
+
+function copyMobileConnectLink() {
+  if (!appState.gsheetUrl) {
+    showToast('Please save your Google Apps Script URL first before sharing!', 'warning');
+    return;
+  }
+
+  const connectUrl = `${window.location.origin}${window.location.pathname}?gsheet=${encodeURIComponent(appState.gsheetUrl)}`;
+  
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(connectUrl).then(() => {
+      showToast('📱 Mobile Connect Link copied! Send this link to delivery staff on WhatsApp.', 'success');
+    }).catch(() => {
+      prompt('Copy this URL and open it on delivery boy / Ops phones:', connectUrl);
+    });
+  } else {
+    prompt('Copy this URL and open it on delivery boy / Ops phones:', connectUrl);
   }
 }
 
