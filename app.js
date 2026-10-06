@@ -382,6 +382,11 @@ function recalculateBill(bill) {
   return bill;
 }
 
+function isSameAgent(agentA, agentB) {
+  if (!agentA || !agentB) return false;
+  return String(agentA).trim().toLowerCase() === String(agentB).trim().toLowerCase();
+}
+
 function recalculateAllBills() {
   appState.bills = appState.bills.map(recalculateBill);
   saveBillsToLocal();
@@ -764,8 +769,11 @@ function handleCreateStaffAccountSubmit(event) {
         history: []
       };
       saveAttendanceToLocal();
+      triggerAutoCloudSync({ attendance: appState.attendance }, 'update_attendance');
     }
   }
+
+  triggerAutoCloudSync({ accounts: appState.accounts }, 'update_accounts');
 
   refreshAgentsListFromAccounts();
   populateAuthStaffDropdowns();
@@ -788,6 +796,7 @@ function deleteStaffAccount(accountId) {
 
   appState.accounts = appState.accounts.filter(a => a.id !== accountId);
   saveAccountsToLocal();
+  triggerAutoCloudSync({ accounts: appState.accounts }, 'update_accounts');
 
   refreshAgentsListFromAccounts();
   populateAuthStaffDropdowns();
@@ -1075,8 +1084,8 @@ function updateBadgeCounts() {
   let unpaidBills = appState.bills.filter(b => b.paymentStatus !== 'Paid');
 
   if (isAgent && agentName) {
-    pendingBills = pendingBills.filter(b => b.deliveryAgent === agentName);
-    unpaidBills = unpaidBills.filter(b => b.deliveryAgent === agentName);
+    pendingBills = pendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+    unpaidBills = unpaidBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
   }
 
   const pendingCount = pendingBills.length;
@@ -1126,6 +1135,11 @@ function getPaymentBadgeHtml(paymentStatus, paymentMode) {
 function getAgentBadgeHtml(agentName) {
   if (!agentName || agentName === 'Unassigned') {
     return `<span class="badge badge-neutral"><i class="fa-solid fa-user-xmark"></i> Unassigned</span>`;
+  }
+  const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const currentAgent = appState.currentUser?.agentName;
+  if (isAgent && isSameAgent(agentName, currentAgent)) {
+    return `<span class="badge badge-primary" style="font-weight:700;"><i class="fa-solid fa-user-check"></i> Assigned to You</span>`;
   }
   return `<span class="badge badge-purple"><i class="fa-solid fa-person-biking"></i> ${agentName.split(' ')[0]}</span>`;
 }
@@ -1320,18 +1334,18 @@ function renderPendingDeliveries() {
   let pendingBills = allStorePendingBills;
 
   if (isAgent && agentName) {
-    if (heroLabel) heroLabel.textContent = `Pending Deliveries (${agentName.split(' ')[0]})`;
+    if (heroLabel) heroLabel.textContent = `My Deliveries (${agentName.split(' ')[0]})`;
     if (appState.filterPendingTab === 'all') {
       // Show orders assigned to this agent + unassigned orders
-      pendingBills = allStorePendingBills.filter(b => b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
+      pendingBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
     } else if (appState.filterPendingTab === 'my_orders') {
-      pendingBills = allStorePendingBills.filter(b => b.deliveryAgent === agentName);
+      pendingBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
     } else if (appState.filterPendingTab === 'Unassigned') {
       pendingBills = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
     } else if (appState.filterPendingTab === 'Pending') {
-      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending' && (b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending' && (isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
     } else if (appState.filterPendingTab === 'Out for Delivery') {
-      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery' && (b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery' && (isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
     }
   } else {
     if (heroLabel) heroLabel.textContent = `All Pending Deliveries`;
@@ -1408,7 +1422,7 @@ function renderUnpaidBills() {
 
   const totalOutstanding = unpaidBills.reduce((sum, b) => sum + (Number(b.balance) || 0), 0);
   const overdue7Count = unpaidBills.filter(b => b.daysPending >= 7).length;
-  const myUncollectedCount = isAgent && agentName ? unpaidBills.filter(b => b.deliveryAgent === agentName).length : 0;
+  const myUncollectedCount = isAgent && agentName ? unpaidBills.filter(b => isSameAgent(b.deliveryAgent, agentName)).length : 0;
 
   if (totalAmtEl) totalAmtEl.textContent = formatCurrency(totalOutstanding);
   if (countEl) countEl.textContent = `${unpaidBills.length} Unpaid Invoices`;
@@ -2049,18 +2063,33 @@ function renderBillCardWithQuickActions(bill, context) {
   let quickActionsHtml = '';
 
   if (context === 'delivery') {
-    quickActionsHtml = `
-      <div class="card-quick-actions" onclick="event.stopPropagation()">
-        ${bill.deliveryStatus === 'Pending' ? `
-          <button class="btn-card-action btn-amber" onclick="quickMarkOutForDelivery('${bill.invoiceNo}')">
-            <i class="fa-solid fa-truck-fast"></i> Out for Delivery
+    const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+    const agentName = appState.currentUser?.agentName;
+    const isUnassigned = !bill.deliveryAgent || bill.deliveryAgent === 'Unassigned';
+    const isMyOrder = isAgent && isSameAgent(bill.deliveryAgent, agentName);
+
+    if (isAgent && isUnassigned) {
+      quickActionsHtml = `
+        <div class="card-quick-actions" onclick="event.stopPropagation()">
+          <button class="btn-card-action btn-primary full-width" onclick="quickClaimOrder('${bill.invoiceNo}')">
+            <i class="fa-solid fa-hand-holding-hand"></i> Claim Order & Start Delivery
           </button>
-        ` : ''}
-        <button class="btn-card-action btn-green" onclick="quickOpenDeliveryProofModal('${bill.invoiceNo}')">
-          <i class="fa-solid fa-camera"></i> Mark Delivered
-        </button>
-      </div>
-    `;
+        </div>
+      `;
+    } else {
+      quickActionsHtml = `
+        <div class="card-quick-actions" onclick="event.stopPropagation()">
+          ${bill.deliveryStatus === 'Pending' ? `
+            <button class="btn-card-action btn-amber" onclick="quickMarkOutForDelivery('${bill.invoiceNo}')">
+              <i class="fa-solid fa-truck-fast"></i> ${isMyOrder ? 'Start Delivery' : 'Out for Delivery'}
+            </button>
+          ` : ''}
+          <button class="btn-card-action btn-green" onclick="quickOpenDeliveryProofModal('${bill.invoiceNo}')">
+            <i class="fa-solid fa-camera"></i> Mark Delivered
+          </button>
+        </div>
+      `;
+    }
   } else if (context === 'payment' || context === 'flat_view') {
     quickActionsHtml = `
       <div class="card-quick-actions" onclick="event.stopPropagation()">
@@ -2240,11 +2269,13 @@ function executeReassignAgent(newAgent) {
   if (!bill) return;
 
   bill.deliveryAgent = newAgent;
+  bill.lastUpdated = new Date().toISOString();
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
 
-  document.getElementById('modal-assigned-agent-display').textContent = newAgent;
-  showToast(`Assigned #${bill.invoiceNo} to ${newAgent}`, 'info');
+  const displayEl = document.getElementById('modal-assigned-agent-display');
+  if (displayEl) displayEl.textContent = newAgent;
+  showToast(`Assigned #${bill.invoiceNo} to ${newAgent}`, 'success');
   renderApp();
 }
 
@@ -2255,6 +2286,7 @@ function executeMarkOutForDelivery() {
   if (!bill) return;
 
   bill.deliveryStatus = 'Out for Delivery';
+  bill.lastUpdated = new Date().toISOString();
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
   showToast(`Bill #${bill.invoiceNo} is Out for Delivery! 🚚`, 'warning');
@@ -2266,9 +2298,25 @@ function quickMarkOutForDelivery(invoiceNo) {
   const bill = appState.bills.find(b => b.invoiceNo === invoiceNo);
   if (!bill) return;
   bill.deliveryStatus = 'Out for Delivery';
+  bill.lastUpdated = new Date().toISOString();
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
   showToast(`Flat ${bill.flatNo} Out for Delivery!`, 'warning');
+  renderApp();
+}
+
+function quickClaimOrder(invoiceNo) {
+  const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const agentName = appState.currentUser?.agentName || (AGENTS_LIST[0] || 'Rahul Sharma');
+  const bill = appState.bills.find(b => b.invoiceNo === invoiceNo);
+  if (!bill) return;
+
+  bill.deliveryAgent = agentName;
+  bill.deliveryStatus = 'Out for Delivery';
+  bill.lastUpdated = new Date().toISOString();
+  saveBillsToLocal();
+  triggerAutoCloudSync(bill, 'upsert_bill');
+  showToast(`🟢 Claimed #${bill.invoiceNo} (Flat ${bill.flatNo}) for delivery!`, 'success');
   renderApp();
 }
 
@@ -2947,9 +2995,17 @@ async function fetchBillsFromCloud(silent = true) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const result = await response.json();
 
-    if (result && result.status === 'success' && Array.isArray(result.bills)) {
-      mergeCloudBills(result.bills);
-      if (!silent) {
+    if (result && result.status === 'success') {
+      if (Array.isArray(result.bills)) {
+        mergeCloudBills(result.bills);
+      }
+      if (Array.isArray(result.accounts) && result.accounts.length > 0) {
+        mergeCloudAccounts(result.accounts);
+      }
+      if (result.attendance && typeof result.attendance === 'object') {
+        mergeCloudAttendance(result.attendance);
+      }
+      if (!silent && Array.isArray(result.bills)) {
         showToast(`⚡ Synced ${result.bills.length} bills from AWS DynamoDB!`, 'success');
       }
     }
@@ -2963,6 +3019,56 @@ async function fetchBillsFromCloud(silent = true) {
       appState.isSyncing = false;
       if (syncBtn) syncBtn.classList.remove('syncing');
       if (syncLabel) syncLabel.textContent = 'AWS Live';
+    }
+  }
+}
+
+function mergeCloudAccounts(cloudAccounts) {
+  if (!Array.isArray(cloudAccounts) || cloudAccounts.length === 0) return;
+  let updated = false;
+
+  cloudAccounts.forEach(ca => {
+    if (!ca || !ca.name) return;
+    const existingIndex = appState.accounts.findIndex(a => 
+      (ca.id && a.id === ca.id) || 
+      (a.name && a.name.trim().toLowerCase() === ca.name.trim().toLowerCase())
+    );
+    if (existingIndex < 0) {
+      appState.accounts.push(ca);
+      updated = true;
+    } else {
+      const existing = appState.accounts[existingIndex];
+      if (existing.pin !== ca.pin || existing.route !== ca.route || existing.phone !== ca.phone) {
+        appState.accounts[existingIndex] = { ...existing, ...ca };
+        updated = true;
+      }
+    }
+  });
+
+  if (updated) {
+    saveAccountsToLocal();
+    refreshAgentsListFromAccounts();
+    populateAuthStaffDropdowns();
+    populateAllAgentSelectElements();
+    if (appState.activeScreen === 'screen-settings') {
+      renderStaffAccountsList();
+    }
+  }
+}
+
+function mergeCloudAttendance(cloudAtt) {
+  if (!cloudAtt || typeof cloudAtt !== 'object') return;
+  let changed = false;
+  Object.keys(cloudAtt).forEach(agentKey => {
+    if (!appState.attendance[agentKey] || JSON.stringify(appState.attendance[agentKey]) !== JSON.stringify(cloudAtt[agentKey])) {
+      appState.attendance[agentKey] = cloudAtt[agentKey];
+      changed = true;
+    }
+  });
+  if (changed) {
+    saveAttendanceToLocal();
+    if (appState.activeScreen === 'screen-attendance') {
+      renderAttendanceScreen();
     }
   }
 }
@@ -3012,14 +3118,15 @@ function mergeCloudBills(cloudBills) {
       const cloudTime = new Date(cb.lastUpdated || 0).getTime();
       const localTime = new Date(existing.lastUpdated || 0).getTime();
 
+      const isAgentDifferent = !isSameAgent(existing.deliveryAgent, cb.deliveryAgent);
       const hasFieldDifferences = 
         existing.deliveryStatus !== (cb.deliveryStatus || existing.deliveryStatus) ||
         existing.paymentStatus !== (cb.paymentStatus || existing.paymentStatus) ||
-        existing.deliveryAgent !== (cb.deliveryAgent || existing.deliveryAgent) ||
+        isAgentDifferent ||
         Number(existing.billAmount) !== Number(cb.billAmount) ||
         Number(existing.amountReceived) !== Number(cb.amountReceived);
 
-      if (cloudTime > localTime || hasFieldDifferences) {
+      if (cloudTime >= localTime || hasFieldDifferences) {
         existing.flatNo = cb.flatNo || existing.flatNo;
         existing.billAmount = Number(cb.billAmount) || existing.billAmount;
         existing.billedDate = cb.billedDate || existing.billedDate;
