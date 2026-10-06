@@ -13,13 +13,13 @@
 const DEFAULT_AWS_API_URL = 'https://6rvn28uvv1.execute-api.us-east-1.amazonaws.com';
 
 const STORAGE_KEYS = {
-  BILLS: 'retail_bills_data_v8',
-  AUTH: 'retail_bills_auth_v5',
+  BILLS: 'retail_bills_data_v9',
+  AUTH: 'retail_bills_auth_v6',
   AWS_API_URL: 'retail_bills_aws_api_v1',
   STORE_UPI: 'retail_bills_store_upi_v5',
-  ATTENDANCE: 'retail_bills_attendance_v8',
+  ATTENDANCE: 'retail_bills_attendance_v9',
   THEME: 'retail_bills_theme_v1',
-  ACCOUNTS: 'retail_bills_accounts_v7'
+  ACCOUNTS: 'retail_bills_accounts_v8'
 };
 
 const DEFAULT_ACCOUNTS = [
@@ -31,100 +31,14 @@ const DEFAULT_ACCOUNTS = [
     pin: '9999',
     storeName: 'rad. Express Flagship',
     createdAt: '2026-10-01'
-  },
-  {
-    id: 'acc-ops-1',
-    role: 'ops',
-    name: 'Operations Executive',
-    phone: '9876543210',
-    pin: '1234',
-    createdAt: '2026-10-01'
-  },
-  {
-    id: 'acc-agent-1',
-    role: 'agent',
-    name: 'Rahul Sharma',
-    phone: '9811122233',
-    pin: '5555',
-    route: 'West Sector (A-Block)',
-    createdAt: '2026-10-01'
-  },
-  {
-    id: 'acc-agent-2',
-    role: 'agent',
-    name: 'Vikram Singh',
-    phone: '9822233344',
-    pin: '5555',
-    route: 'Central Plaza (B-Block)',
-    createdAt: '2026-10-02'
-  },
-  {
-    id: 'acc-agent-3',
-    role: 'agent',
-    name: 'Suresh Kumar',
-    phone: '9833344455',
-    pin: '5555',
-    route: 'North Ridge (C-Block)',
-    createdAt: '2026-10-03'
-  },
-  {
-    id: 'acc-agent-4',
-    role: 'agent',
-    name: 'Amit Patel',
-    phone: '9844455566',
-    pin: '5555',
-    route: 'South Towers (D-Block)',
-    createdAt: '2026-10-04'
   }
 ];
 
-let AGENTS_LIST = [
-  'Rahul Sharma',
-  'Vikram Singh',
-  'Suresh Kumar',
-  'Amit Patel'
-];
+let AGENTS_LIST = [];
 
 const DEFAULT_STORE_UPI = 'paytm.s2dxeyt@pty';
 
-const DEFAULT_ATTENDANCE = {
-  'Rahul Sharma': {
-    status: 'off_duty',
-    punchInTime: '',
-    punchInDate: '',
-    punchOutTime: '',
-    shiftStartTimestamp: null,
-    photo: '',
-    history: []
-  },
-  'Vikram Singh': {
-    status: 'off_duty',
-    punchInTime: '',
-    punchInDate: '',
-    punchOutTime: '',
-    shiftStartTimestamp: null,
-    photo: '',
-    history: []
-  },
-  'Suresh Kumar': {
-    status: 'off_duty',
-    punchInTime: '',
-    punchInDate: '',
-    punchOutTime: '',
-    shiftStartTimestamp: null,
-    photo: '',
-    history: []
-  },
-  'Amit Patel': {
-    status: 'off_duty',
-    punchInTime: '',
-    punchInDate: '',
-    punchOutTime: '',
-    shiftStartTimestamp: null,
-    photo: '',
-    history: []
-  }
-};
+const DEFAULT_ATTENDANCE = {};
 
 const DEFAULT_SAMPLE_BILLS = [];
 
@@ -202,8 +116,10 @@ function applyTheme(theme) {
 function loadSavedData() {
   // Purge legacy storage versions
   [
-    'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7',
-    'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7'
+    'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7', 'retail_bills_data_v8',
+    'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7', 'retail_bills_attendance_v8',
+    'retail_bills_accounts_v1', 'retail_bills_accounts_v2', 'retail_bills_accounts_v3', 'retail_bills_accounts_v4', 'retail_bills_accounts_v5', 'retail_bills_accounts_v6', 'retail_bills_accounts_v7',
+    'retail_bills_auth_v1', 'retail_bills_auth_v2', 'retail_bills_auth_v3', 'retail_bills_auth_v4', 'retail_bills_auth_v5'
   ].forEach(k => localStorage.removeItem(k));
 
   // Check URL query param if custom api passed
@@ -3037,27 +2953,9 @@ async function fetchBillsFromCloud(silent = true) {
 
 function mergeCloudAccounts(cloudAccounts) {
   if (!Array.isArray(cloudAccounts) || cloudAccounts.length === 0) return;
-  let updated = false;
-
-  cloudAccounts.forEach(ca => {
-    if (!ca || !ca.name) return;
-    const existingIndex = appState.accounts.findIndex(a => 
-      (ca.id && a.id === ca.id) || 
-      (a.name && a.name.trim().toLowerCase() === ca.name.trim().toLowerCase())
-    );
-    if (existingIndex < 0) {
-      appState.accounts.push(ca);
-      updated = true;
-    } else {
-      const existing = appState.accounts[existingIndex];
-      if (existing.pin !== ca.pin || existing.route !== ca.route || existing.phone !== ca.phone) {
-        appState.accounts[existingIndex] = { ...existing, ...ca };
-        updated = true;
-      }
-    }
-  });
-
-  if (updated) {
+  
+  if (JSON.stringify(appState.accounts) !== JSON.stringify(cloudAccounts)) {
+    appState.accounts = [...cloudAccounts];
     saveAccountsToLocal(false);
     refreshAgentsListFromAccounts();
     populateAuthStaffDropdowns();
@@ -3070,14 +2968,8 @@ function mergeCloudAccounts(cloudAccounts) {
 
 function mergeCloudAttendance(cloudAtt) {
   if (!cloudAtt || typeof cloudAtt !== 'object') return;
-  let changed = false;
-  Object.keys(cloudAtt).forEach(agentKey => {
-    if (!appState.attendance[agentKey] || JSON.stringify(appState.attendance[agentKey]) !== JSON.stringify(cloudAtt[agentKey])) {
-      appState.attendance[agentKey] = cloudAtt[agentKey];
-      changed = true;
-    }
-  });
-  if (changed) {
+  if (JSON.stringify(appState.attendance) !== JSON.stringify(cloudAtt)) {
+    appState.attendance = { ...cloudAtt };
     saveAttendanceToLocal(false);
     if (appState.activeScreen === 'screen-attendance') {
       renderAttendanceScreen();
