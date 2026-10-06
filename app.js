@@ -3100,13 +3100,17 @@ function renderGSheetTableRows() {
 // 21. ATTENDANCE & FLEET ROSTER SYSTEM (WITH DATE-WISE FILTER)
 // ==========================================
 
+function formatDateToISO(dateObj) {
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const d = String(dateObj.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function getYesterdayISODate() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatDateToISO(d);
 }
 
 function formatPrettyDate(isoDateStr) {
@@ -3116,12 +3120,64 @@ function formatPrettyDate(isoDateStr) {
   return `${String(d).padStart(2, '0')} ${months[m - 1] || ''} ${y}`;
 }
 
+function getAttendanceDateFilterRange() {
+  const filter = appState.attendanceFilterDate || 'today';
+  const todayStr = getTodayISODate();
+  
+  if (filter === 'today') {
+    return { type: 'today', startDate: todayStr, endDate: todayStr, label: `Today (${formatPrettyDate(todayStr)})` };
+  }
+  if (filter === 'yesterday') {
+    const yestStr = getYesterdayISODate();
+    return { type: 'yesterday', startDate: yestStr, endDate: yestStr, label: `Yesterday (${formatPrettyDate(yestStr)})` };
+  }
+  if (filter === 'this_week') {
+    const now = new Date();
+    const dayOfWeek = (now.getDay() + 6) % 7; // Monday = 0
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek);
+    startOfWeek.setHours(0, 0, 0, 0);
+    const startStr = formatDateToISO(startOfWeek);
+    return { type: 'this_week', startDate: startStr, endDate: todayStr, label: `This Week (${formatPrettyDate(startStr)} - ${formatPrettyDate(todayStr)})` };
+  }
+  if (filter === 'this_month') {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startStr = formatDateToISO(startOfMonth);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return { type: 'this_month', startDate: startStr, endDate: todayStr, label: `This Month (${months[now.getMonth()]} ${now.getFullYear()})` };
+  }
+  if (filter === 'last_month') {
+    const now = new Date();
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    const startStr = formatDateToISO(startOfLastMonth);
+    const endStr = formatDateToISO(endOfLastMonth);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return { type: 'last_month', startDate: startStr, endDate: endStr, label: `Last Month (${months[startOfLastMonth.getMonth()]} ${startOfLastMonth.getFullYear()})` };
+  }
+  if (filter === 'all') {
+    return { type: 'all', startDate: null, endDate: null, label: 'All Time (Lifetime Summary)' };
+  }
+  
+  // Specific custom date
+  return { type: 'custom', startDate: filter, endDate: filter, label: `${formatPrettyDate(filter)}` };
+}
+
+function isDateInAttendanceFilterRange(dateStr) {
+  if (!dateStr) return false;
+  const range = getAttendanceDateFilterRange();
+  if (range.type === 'all') return true;
+  if (!range.startDate || !range.endDate) return true;
+  return dateStr >= range.startDate && dateStr <= range.endDate;
+}
+
 function setAttendanceFilterDate(mode) {
   const todayStr = getTodayISODate();
-  const yesterdayStr = getYesterdayISODate();
+  const allowedModes = ['today', 'yesterday', 'this_week', 'this_month', 'last_month', 'all'];
   
   // Guard against future dates
-  if (mode !== 'today' && mode !== 'yesterday' && mode !== 'all' && mode > todayStr) {
+  if (!allowedModes.includes(mode) && mode > todayStr) {
     showToast('Future date selection is not allowed. Switched to Today.', 'warning');
     mode = 'today';
   }
@@ -3130,42 +3186,51 @@ function setAttendanceFilterDate(mode) {
   
   const chipToday = document.getElementById('chip-att-date-today');
   const chipYesterday = document.getElementById('chip-att-date-yesterday');
+  const chipThisWeek = document.getElementById('chip-att-date-this-week');
+  const chipThisMonth = document.getElementById('chip-att-date-this-month');
+  const chipLastMonth = document.getElementById('chip-att-date-last-month');
   const chipAll = document.getElementById('chip-att-date-all');
   const dateInput = document.getElementById('input-attendance-custom-date');
   const summaryDisplay = document.getElementById('att-selected-date-display');
 
   if (dateInput) {
-    dateInput.max = todayStr; // Enforce maximum date is today in the calendar popup
+    dateInput.max = todayStr;
   }
 
   chipToday?.classList.remove('active');
   chipYesterday?.classList.remove('active');
+  chipThisWeek?.classList.remove('active');
+  chipThisMonth?.classList.remove('active');
+  chipLastMonth?.classList.remove('active');
   chipAll?.classList.remove('active');
+
+  const range = getAttendanceDateFilterRange();
 
   if (mode === 'today') {
     chipToday?.classList.add('active');
     if (dateInput) dateInput.value = todayStr;
-    if (summaryDisplay) summaryDisplay.textContent = `Today (${formatPrettyDate(todayStr)})`;
   } else if (mode === 'yesterday') {
     chipYesterday?.classList.add('active');
-    if (dateInput) dateInput.value = yesterdayStr;
-    if (summaryDisplay) summaryDisplay.textContent = `Yesterday (${formatPrettyDate(yesterdayStr)})`;
+    if (dateInput) dateInput.value = getYesterdayISODate();
+  } else if (mode === 'this_week') {
+    chipThisWeek?.classList.add('active');
+    if (dateInput) dateInput.value = '';
+  } else if (mode === 'this_month') {
+    chipThisMonth?.classList.add('active');
+    if (dateInput) dateInput.value = '';
+  } else if (mode === 'last_month') {
+    chipLastMonth?.classList.add('active');
+    if (dateInput) dateInput.value = '';
   } else if (mode === 'all') {
     chipAll?.classList.add('active');
     if (dateInput) dateInput.value = '';
-    if (summaryDisplay) summaryDisplay.textContent = `All Time (Lifetime Summary)`;
   } else {
     // Custom date chosen
     if (dateInput) dateInput.value = mode;
-    if (mode === todayStr) {
-      chipToday?.classList.add('active');
-      if (summaryDisplay) summaryDisplay.textContent = `Today (${formatPrettyDate(todayStr)})`;
-    } else if (mode === yesterdayStr) {
-      chipYesterday?.classList.add('active');
-      if (summaryDisplay) summaryDisplay.textContent = `Yesterday (${formatPrettyDate(yesterdayStr)})`;
-    } else {
-      if (summaryDisplay) summaryDisplay.textContent = `${formatPrettyDate(mode)}`;
-    }
+  }
+
+  if (summaryDisplay) {
+    summaryDisplay.textContent = range.label;
   }
 
   renderAttendanceScreen();
@@ -3183,14 +3248,6 @@ function handleAttendanceCustomDateChange(dateValue) {
     return;
   }
   setAttendanceFilterDate(dateValue);
-}
-
-function getActiveAttendanceTargetDate() {
-  const filter = appState.attendanceFilterDate || 'today';
-  if (filter === 'today') return getTodayISODate();
-  if (filter === 'yesterday') return getYesterdayISODate();
-  if (filter === 'all') return null; // all dates
-  return filter;
 }
 
 function formatCurrentTime() {
@@ -3267,9 +3324,9 @@ function renderAttendanceScreen() {
 
 function renderAgentAttendance() {
   const agentName = appState.currentUser?.agentName || (AGENTS_LIST[0] || 'Rahul Sharma');
-  const targetDate = getActiveAttendanceTargetDate();
+  const range = getAttendanceDateFilterRange();
   const todayStr = getTodayISODate();
-  const isViewingToday = !targetDate || targetDate === todayStr;
+  const isViewingToday = range.type === 'today';
   
   if (!appState.attendance[agentName]) {
     appState.attendance[agentName] = {
@@ -3314,14 +3371,14 @@ function renderAgentAttendance() {
         statusText.textContent = 'OFF DUTY';
       }
     } else {
-      // Historical date status
-      const dateLogs = (record.history || []).filter(h => h.date === targetDate);
+      // Date range logs check
+      const dateLogs = (record.history || []).filter(h => isDateInAttendanceFilterRange(h.date));
       if (dateLogs.length > 0) {
         statusPill.classList.add('status-on-duty');
-        statusText.textContent = `WORKED (${formatPrettyDate(targetDate)})`;
+        statusText.textContent = `ACTIVE (${dateLogs.length} logs in period)`;
       } else {
         statusPill.classList.add('status-off-duty');
-        statusText.textContent = `NO DUTY (${formatPrettyDate(targetDate)})`;
+        statusText.textContent = `NO DUTY IN PERIOD`;
       }
     }
   }
@@ -3336,11 +3393,11 @@ function renderAgentAttendance() {
         startInfo.innerHTML = `<i class="fa-solid fa-moon text-muted"></i> Shift ended / Not currently clocked in today`;
       }
     } else {
-      const dateLogs = (record.history || []).filter(h => h.date === targetDate);
+      const dateLogs = (record.history || []).filter(h => isDateInAttendanceFilterRange(h.date));
       if (dateLogs.length > 0) {
-        startInfo.innerHTML = `<i class="fa-solid fa-calendar-check text-primary"></i> ${dateLogs.length} shift actions recorded on ${formatPrettyDate(targetDate)}`;
+        startInfo.innerHTML = `<i class="fa-solid fa-calendar-check text-primary"></i> ${dateLogs.length} shift actions recorded during <strong>${range.label}</strong>`;
       } else {
-        startInfo.innerHTML = `<i class="fa-solid fa-calendar-xmark text-muted"></i> No shift logs on ${formatPrettyDate(targetDate)}`;
+        startInfo.innerHTML = `<i class="fa-solid fa-calendar-xmark text-muted"></i> No shift logs during ${range.label}`;
       }
     }
   }
@@ -3404,17 +3461,15 @@ function renderAgentAttendance() {
       photoPreviewWrap.innerHTML = `
         <div class="photo-prompt-box" onclick="${isViewingToday ? 'promptPunchIn()' : ''}">
           <i class="fa-solid fa-camera text-primary"></i>
-          <span>${isViewingToday ? 'Upload Duty Selfie / Check-In Photo' : 'No photo uploaded for this date'}</span>
+          <span>${isViewingToday ? 'Upload Duty Selfie / Check-In Photo' : 'No photo uploaded for this period'}</span>
         </div>
       `;
     }
   }
 
-  // Shift KPIs (Calculated by Date Filter)
+  // Shift KPIs (Calculated by Date Filter Range)
   let agentBills = appState.bills.filter(b => b.deliveryAgent === agentName);
-  if (targetDate) {
-    agentBills = agentBills.filter(b => (b.deliveredDate === targetDate || (!b.deliveredDate && b.billedDate === targetDate)));
-  }
+  agentBills = agentBills.filter(b => isDateInAttendanceFilterRange(b.deliveredDate || b.billedDate));
 
   const myDelivered = agentBills.filter(b => b.deliveryStatus === 'Delivered');
   const myCash = agentBills
@@ -3432,14 +3487,12 @@ function renderAgentAttendance() {
   if (cashCollectedEl) cashCollectedEl.textContent = formatCurrency(myCash);
   if (qrCollectedEl) qrCollectedEl.textContent = formatCurrency(myQr);
 
-  // Shift Timeline Log (Filtered by Date)
+  // Shift Timeline Log (Filtered by Date Range)
   const timelineEl = document.getElementById('agent-attendance-timeline');
   const logCountEl = document.getElementById('agent-punch-log-count');
   
   let history = record.history || [];
-  if (targetDate) {
-    history = history.filter(h => h.date === targetDate);
-  }
+  history = history.filter(h => isDateInAttendanceFilterRange(h.date));
 
   if (logCountEl) logCountEl.textContent = `${history.length} ${history.length === 1 ? 'entry' : 'entries'}`;
 
@@ -3448,7 +3501,7 @@ function renderAgentAttendance() {
       timelineEl.innerHTML = `
         <div class="empty-timeline-box">
           <i class="fa-solid fa-clock-rotate-left"></i>
-          <p>No shift activity recorded for ${targetDate ? formatPrettyDate(targetDate) : 'this period'}.</p>
+          <p>No shift activity recorded for ${range.label}.</p>
         </div>
       `;
     } else {
@@ -3484,9 +3537,9 @@ function renderOpsAttendance() {
   const rosterContainer = document.getElementById('fleet-attendance-roster');
   if (!rosterContainer) return;
 
-  const targetDate = getActiveAttendanceTargetDate();
+  const range = getAttendanceDateFilterRange();
   const todayStr = getTodayISODate();
-  const isViewingToday = !targetDate || targetDate === todayStr;
+  const isViewingToday = range.type === 'today';
 
   let onDutyCount = 0;
   let offDutyCount = 0;
@@ -3497,8 +3550,8 @@ function renderOpsAttendance() {
       if (att && att.status === 'on_duty') onDutyCount++;
       else offDutyCount++;
     } else {
-      // Historical check
-      const hadDuty = att && (att.history || []).some(h => h.date === targetDate);
+      // Historical check in date range
+      const hadDuty = att && (att.history || []).some(h => isDateInAttendanceFilterRange(h.date));
       if (hadDuty) onDutyCount++;
       else offDutyCount++;
     }
@@ -3514,7 +3567,7 @@ function renderOpsAttendance() {
     if (isViewingToday) {
       fleetSummaryEl.textContent = `${onDutyCount} On Duty • ${offDutyCount} Off Duty`;
     } else {
-      fleetSummaryEl.textContent = `${onDutyCount} Active on ${formatPrettyDate(targetDate)} • ${offDutyCount} Inactive`;
+      fleetSummaryEl.textContent = `${onDutyCount} Active during ${range.label} • ${offDutyCount} Inactive`;
     }
   }
   if (countOnDutyTab) countOnDutyTab.textContent = String(onDutyCount);
@@ -3525,26 +3578,24 @@ function renderOpsAttendance() {
     if (isViewingToday) {
       displayAgents = AGENTS_LIST.filter(name => appState.attendance[name]?.status === 'on_duty');
     } else {
-      displayAgents = AGENTS_LIST.filter(name => (appState.attendance[name]?.history || []).some(h => h.date === targetDate));
+      displayAgents = AGENTS_LIST.filter(name => (appState.attendance[name]?.history || []).some(h => isDateInAttendanceFilterRange(h.date)));
     }
   } else if (appState.filterFleetAttendanceTab === 'off_duty') {
     if (isViewingToday) {
       displayAgents = AGENTS_LIST.filter(name => appState.attendance[name]?.status !== 'on_duty');
     } else {
-      displayAgents = AGENTS_LIST.filter(name => !(appState.attendance[name]?.history || []).some(h => h.date === targetDate));
+      displayAgents = AGENTS_LIST.filter(name => !(appState.attendance[name]?.history || []).some(h => isDateInAttendanceFilterRange(h.date)));
     }
   }
 
   rosterContainer.innerHTML = displayAgents.map(agentName => {
     const att = appState.attendance[agentName] || { status: 'off_duty', punchInTime: '', history: [] };
-    const isOnDuty = isViewingToday ? att.status === 'on_duty' : (att.history || []).some(h => h.date === targetDate);
+    const isOnDuty = isViewingToday ? att.status === 'on_duty' : (att.history || []).some(h => isDateInAttendanceFilterRange(h.date));
     const isOnBreak = isViewingToday && att.status === 'on_break';
 
     // Date-filtered metrics for this agent
     let assignedOrders = appState.bills.filter(b => b.deliveryAgent === agentName);
-    if (targetDate) {
-      assignedOrders = assignedOrders.filter(b => (b.deliveredDate === targetDate || (!b.deliveredDate && b.billedDate === targetDate)));
-    }
+    assignedOrders = assignedOrders.filter(b => isDateInAttendanceFilterRange(b.deliveredDate || b.billedDate));
 
     const deliveredOrders = assignedOrders.filter(b => b.deliveryStatus === 'Delivered');
     const cashCollected = assignedOrders
@@ -3559,7 +3610,7 @@ function renderOpsAttendance() {
       if (isOnDuty) statusTag = `<span class="badge badge-green"><span class="status-dot dot-green"></span> On Duty (${att.punchInTime || 'Active'})</span>`;
       else if (isOnBreak) statusTag = `<span class="badge badge-yellow"><span class="status-dot dot-yellow"></span> On Break</span>`;
     } else {
-      if (isOnDuty) statusTag = `<span class="badge badge-green"><span class="status-dot dot-green"></span> Worked on ${formatPrettyDate(targetDate)}</span>`;
+      if (isOnDuty) statusTag = `<span class="badge badge-green"><span class="status-dot dot-green"></span> Active in period</span>`;
       else statusTag = `<span class="badge badge-neutral"><span class="status-dot dot-red"></span> Off Duty</span>`;
     }
 
@@ -3579,7 +3630,7 @@ function renderOpsAttendance() {
                 <i class="fa-solid ${isOnDuty ? 'fa-power-off' : 'fa-play'}"></i> ${isOnDuty ? 'Clock Out' : 'Clock In'}
               </button>
             ` : `
-              <span class="badge badge-outline"><i class="fa-solid fa-calendar"></i> ${targetDate ? formatPrettyDate(targetDate) : 'All'}</span>
+              <span class="badge badge-outline"><i class="fa-solid fa-calendar"></i> ${range.type.replace('_', ' ').toUpperCase()}</span>
             `}
           </div>
         </div>
@@ -3807,15 +3858,13 @@ function overrideAgentDutyStatus(agentName, newStatus) {
 }
 
 function exportAttendanceToCSV() {
-  const targetDate = getActiveAttendanceTargetDate();
-  const headers = ['Agent Name', 'Filtered Date', 'Status', 'Punch In Time', 'Punch In Date', 'Punch Out Time', 'Delivered Orders', 'Cash Collected (INR)', 'Digital Collected (INR)'];
+  const range = getAttendanceDateFilterRange();
+  const headers = ['Agent Name', 'Filtered Period', 'Status', 'Punch In Time', 'Punch In Date', 'Punch Out Time', 'Delivered Orders', 'Cash Collected (INR)', 'Digital Collected (INR)'];
   
   const rows = AGENTS_LIST.map(name => {
     const att = appState.attendance[name] || { status: 'off_duty', punchInTime: '', punchInDate: '', punchOutTime: '' };
     let agentBills = appState.bills.filter(b => b.deliveryAgent === name);
-    if (targetDate) {
-      agentBills = agentBills.filter(b => (b.deliveredDate === targetDate || (!b.deliveredDate && b.billedDate === targetDate)));
-    }
+    agentBills = agentBills.filter(b => isDateInAttendanceFilterRange(b.deliveredDate || b.billedDate));
 
     const myDelivered = agentBills.filter(b => b.deliveryStatus === 'Delivered').length;
     const myCash = agentBills.filter(b => b.paymentStatus === 'Paid' && b.paymentMode === 'CASH').reduce((s, b) => s + (Number(b.amountReceived) || 0), 0);
@@ -3823,7 +3872,7 @@ function exportAttendanceToCSV() {
 
     return [
       `"${name}"`,
-      `"${targetDate || 'All Time'}"`,
+      `"${range.label}"`,
       `"${att.status}"`,
       `"${att.punchInTime || ''}"`,
       `"${att.punchInDate || ''}"`,
@@ -3838,12 +3887,12 @@ function exportAttendanceToCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement('a');
   link.setAttribute('href', encodedUri);
-  link.setAttribute('download', `Fleet_Attendance_${targetDate || 'AllTime'}.csv`);
+  link.setAttribute('download', `Fleet_Attendance_${range.type}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 
-  showToast(`Exported Attendance (${targetDate ? formatPrettyDate(targetDate) : 'All Time'}) to CSV!`, 'success');
+  showToast(`Exported Attendance (${range.label}) to CSV!`, 'success');
 }
 
 

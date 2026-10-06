@@ -2,8 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Retail Bill & Delivery Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#080c14" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>rad. Retail & Fleet Command</title>
   
   <!-- Modern Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -206,12 +210,9 @@
             <li id="perm-edit-amount"><i class="fa-solid fa-xmark text-danger"></i> Edit Bill Amount (Owner Only)</li>
           </ul>
         </div>
-        <div class="modal-actions-grid">
-          <button class="btn btn-outline" onclick="switchUserRoleQuick()">
-            <i class="fa-solid fa-repeat"></i> Switch Role
-          </button>
-          <button class="btn btn-danger" onclick="logout()">
-            <i class="fa-solid fa-arrow-right-from-bracket"></i> Sign Out
+        <div class="modal-actions-single">
+          <button class="btn btn-danger btn-block btn-lg" onclick="logout()">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Sign Out / Switch Account
           </button>
         </div>
       </div>
@@ -575,8 +576,17 @@
             <button type="button" class="chip-date" id="chip-att-date-yesterday" onclick="setAttendanceFilterDate('yesterday')">
               <i class="fa-solid fa-clock-rotate-left"></i> Yesterday
             </button>
+            <button type="button" class="chip-date" id="chip-att-date-this-week" onclick="setAttendanceFilterDate('this_week')">
+              <i class="fa-solid fa-calendar-week"></i> This Week
+            </button>
+            <button type="button" class="chip-date" id="chip-att-date-this-month" onclick="setAttendanceFilterDate('this_month')">
+              <i class="fa-solid fa-calendar"></i> This Month
+            </button>
+            <button type="button" class="chip-date" id="chip-att-date-last-month" onclick="setAttendanceFilterDate('last_month')">
+              <i class="fa-solid fa-calendar-minus"></i> Last Month
+            </button>
             <button type="button" class="chip-date" id="chip-att-date-all" onclick="setAttendanceFilterDate('all')">
-              <i class="fa-solid fa-calendar-week"></i> All Time
+              <i class="fa-solid fa-infinity"></i> All Time
             </button>
           </div>
           <div class="date-picker-input-wrap">
