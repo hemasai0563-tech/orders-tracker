@@ -626,23 +626,29 @@ function renderStaffAccountsList() {
 
     return `
       <div class="staff-account-card">
-        <div class="staff-card-left">
-          <div class="staff-card-avatar">
-            ${avatarIcon}
+        <div class="staff-card-top-row">
+          <div class="staff-card-left">
+            <div class="staff-card-avatar">
+              ${avatarIcon}
+            </div>
+            <div class="staff-card-info">
+              <h4 class="staff-name-full">${acc.name}</h4>
+              <p class="staff-sub-desc">${subDesc}</p>
+            </div>
           </div>
-          <div class="staff-card-info">
-            <h5>${acc.name}</h5>
-            <p>${subDesc}</p>
-          </div>
-        </div>
-        <div class="staff-card-right">
-          <div>${roleBadge}</div>
-          <span class="staff-pin-chip" title="PIN"><i class="fa-solid fa-key"></i> ${acc.pin}</span>
           ${!isMaster ? `
             <button type="button" class="btn-del-staff" onclick="deleteStaffAccount('${acc.id}')" title="Delete Account">
               <i class="fa-solid fa-trash-can"></i>
             </button>
           ` : ''}
+        </div>
+        <div class="staff-card-bottom-row">
+          <div class="staff-badges-group">
+            ${roleBadge}
+          </div>
+          <div class="staff-pin-badge">
+            <span class="staff-pin-chip" title="Login PIN"><i class="fa-solid fa-key"></i> PIN: <strong>${acc.pin}</strong></span>
+          </div>
         </div>
       </div>
     `;
