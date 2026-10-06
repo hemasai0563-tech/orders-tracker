@@ -220,7 +220,13 @@ function loadSavedData() {
     }
   } catch (e) {}
 
-  appState.apiUrl = localStorage.getItem(STORAGE_KEYS.AWS_API_URL) || DEFAULT_AWS_API_URL;
+  // Ensure AWS API URL is valid and migrate any legacy or Google Script URLs
+  let savedApi = localStorage.getItem(STORAGE_KEYS.AWS_API_URL);
+  if (!savedApi || savedApi.includes('script.google.com') || !savedApi.startsWith('http')) {
+    savedApi = DEFAULT_AWS_API_URL;
+    localStorage.setItem(STORAGE_KEYS.AWS_API_URL, DEFAULT_AWS_API_URL);
+  }
+  appState.apiUrl = savedApi;
   appState.storeUpiId = localStorage.getItem(STORAGE_KEYS.STORE_UPI) || DEFAULT_STORE_UPI;
 
   const urlInput = document.getElementById('input-aws-api-url');
@@ -239,7 +245,7 @@ function loadSavedData() {
     }
   } else {
     appState.accounts = [...DEFAULT_ACCOUNTS];
-    saveAccountsToLocal();
+    saveAccountsToLocal(false);
   }
 
   // Update AGENTS_LIST from accounts
@@ -268,7 +274,7 @@ function loadSavedData() {
     }
   } else {
     appState.attendance = JSON.parse(JSON.stringify(DEFAULT_ATTENDANCE));
-    saveAttendanceToLocal();
+    saveAttendanceToLocal(false);
   }
 
   // Ensure all agents exist in attendance and shiftStartTimestamp is valid
@@ -289,7 +295,7 @@ function loadSavedData() {
       }
     }
   });
-  saveAttendanceToLocal();
+  saveAttendanceToLocal(false);
 
   populateAuthStaffDropdowns();
   populateAllAgentSelectElements();
@@ -303,12 +309,18 @@ function refreshAgentsListFromAccounts() {
   }
 }
 
-function saveAccountsToLocal() {
+function saveAccountsToLocal(syncCloud = true) {
   localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(appState.accounts));
+  if (syncCloud) {
+    triggerAutoCloudSync({ accounts: appState.accounts }, 'update_accounts');
+  }
 }
 
-function saveAttendanceToLocal() {
+function saveAttendanceToLocal(syncCloud = true) {
   localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(appState.attendance));
+  if (syncCloud) {
+    triggerAutoCloudSync({ attendance: appState.attendance }, 'update_attendance');
+  }
 }
 
 function setDefaultBilledDate() {
@@ -1038,7 +1050,7 @@ function navigateToScreen(screenId) {
 
   renderCurrentScreen();
 
-  if (appState.gsheetUrl) {
+  if (appState.apiUrl) {
     fetchBillsFromCloud(true);
   }
 }
@@ -2928,14 +2940,14 @@ function initCloudSyncEngine() {
     fetchBillsFromCloud(true);
   }
 
-  // Periodic background polling every 4 seconds when tab is active
+  // Periodic fast background polling (every 2.5 seconds)
   cloudSyncTimer = setInterval(() => {
     if (appState.apiUrl && !document.hidden && !appState.isSyncing) {
       fetchBillsFromCloud(true);
     }
-  }, 4000);
+  }, 2500);
 
-  // Sync immediately when tab/app becomes visible or focused
+  // Sync immediately when tab/app becomes visible or focused (e.g. phone screen unlock)
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && appState.apiUrl && !appState.isSyncing) {
       fetchBillsFromCloud(true);
@@ -3046,7 +3058,7 @@ function mergeCloudAccounts(cloudAccounts) {
   });
 
   if (updated) {
-    saveAccountsToLocal();
+    saveAccountsToLocal(false);
     refreshAgentsListFromAccounts();
     populateAuthStaffDropdowns();
     populateAllAgentSelectElements();
@@ -3066,7 +3078,7 @@ function mergeCloudAttendance(cloudAtt) {
     }
   });
   if (changed) {
-    saveAttendanceToLocal();
+    saveAttendanceToLocal(false);
     if (appState.activeScreen === 'screen-attendance') {
       renderAttendanceScreen();
     }
@@ -3077,6 +3089,13 @@ function mergeCloudBills(cloudBills) {
   if (!Array.isArray(cloudBills)) return;
 
   let changesCount = 0;
+  const cloudMap = new Map();
+  cloudBills.forEach(cb => {
+    if (cb && cb.invoiceNo) {
+      cloudMap.set(String(cb.invoiceNo).trim().toUpperCase(), cb);
+    }
+  });
+
   const localMap = new Map();
   appState.bills.forEach(b => {
     if (b && b.invoiceNo) {
@@ -3084,6 +3103,7 @@ function mergeCloudBills(cloudBills) {
     }
   });
 
+  // 1. Process cloud bills into local state
   cloudBills.forEach(cb => {
     if (!cb || !cb.invoiceNo) return;
     const invKey = String(cb.invoiceNo).trim().toUpperCase();
@@ -3114,19 +3134,18 @@ function mergeCloudBills(cloudBills) {
       localMap.set(invKey, newBill);
       changesCount++;
     } else {
-      // Check if AWS has newer changes
+      // Check if AWS has newer changes or any field discrepancies
+      const isAgentDifferent = !isSameAgent(existing.deliveryAgent, cb.deliveryAgent);
+      const isDelivStatusDiff = existing.deliveryStatus !== (cb.deliveryStatus || existing.deliveryStatus);
+      const isPayStatusDiff = existing.paymentStatus !== (cb.paymentStatus || existing.paymentStatus);
+      const isAmtDiff = Number(existing.billAmount) !== Number(cb.billAmount) || Number(existing.amountReceived) !== Number(cb.amountReceived);
+      const isFlatDiff = existing.flatNo !== (cb.flatNo || existing.flatNo);
+      const isDateDiff = existing.billedDate !== (cb.billedDate || existing.billedDate);
+
       const cloudTime = new Date(cb.lastUpdated || 0).getTime();
       const localTime = new Date(existing.lastUpdated || 0).getTime();
 
-      const isAgentDifferent = !isSameAgent(existing.deliveryAgent, cb.deliveryAgent);
-      const hasFieldDifferences = 
-        existing.deliveryStatus !== (cb.deliveryStatus || existing.deliveryStatus) ||
-        existing.paymentStatus !== (cb.paymentStatus || existing.paymentStatus) ||
-        isAgentDifferent ||
-        Number(existing.billAmount) !== Number(cb.billAmount) ||
-        Number(existing.amountReceived) !== Number(cb.amountReceived);
-
-      if (cloudTime >= localTime || hasFieldDifferences) {
+      if (cloudTime >= localTime || isAgentDifferent || isDelivStatusDiff || isPayStatusDiff || isAmtDiff || isFlatDiff || isDateDiff) {
         existing.flatNo = cb.flatNo || existing.flatNo;
         existing.billAmount = Number(cb.billAmount) || existing.billAmount;
         existing.billedDate = cb.billedDate || existing.billedDate;
@@ -3148,6 +3167,17 @@ function mergeCloudBills(cloudBills) {
       }
     }
   });
+
+  // 2. Remove bills deleted remotely (if not newly created locally in last 10s)
+  for (const [localKey, localBill] of localMap.entries()) {
+    if (!cloudMap.has(localKey)) {
+      const localAge = Date.now() - new Date(localBill.lastUpdated || 0).getTime();
+      if (localAge > 10000) {
+        localMap.delete(localKey);
+        changesCount++;
+      }
+    }
+  }
 
   if (changesCount > 0) {
     appState.bills = Array.from(localMap.values());
@@ -3196,23 +3226,33 @@ async function triggerAutoCloudSync(payload, action) {
   if (!appState.apiUrl) return;
 
   try {
+    let body = { action };
+    if (action === 'upsert_bill') {
+      body.bill = payload;
+      body.invoiceNo = payload.invoiceNo;
+    } else if (action === 'delete_bill') {
+      body.invoiceNo = payload.invoiceNo || payload;
+    } else if (action === 'update_attendance') {
+      body.attendance = payload.attendance || payload;
+    } else if (action === 'update_accounts') {
+      body.accounts = payload.accounts || payload;
+    } else {
+      body.data = payload;
+    }
+
     fetch(appState.apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: action,
-        bill: payload,
-        invoiceNo: payload.invoiceNo
-      })
+      body: JSON.stringify(body)
     }).catch(err => console.log('AWS sync background event:', err));
   } catch (e) {
     console.log('Background AWS cloud event:', e);
   }
 
-  // Follow-up quick pull after 1s
+  // Follow-up quick pull after 500ms
   setTimeout(() => {
     if (appState.apiUrl) fetchBillsFromCloud(true);
-  }, 1000);
+  }, 500);
 }
 
 // Legacy alias helpers for backwards-compatibility
