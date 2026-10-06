@@ -1293,29 +1293,48 @@ function renderPendingDeliveries() {
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
   const agentName = appState.currentUser?.agentName;
 
-  let pendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered');
+  // All pending bills across the store
+  const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered');
+  allStorePendingBills.sort((a, b) => new Date(a.billedDate) - new Date(b.billedDate));
+
+  let pendingBills = allStorePendingBills;
 
   if (isAgent && agentName) {
-    pendingBills = pendingBills.filter(b => b.deliveryAgent === agentName);
-    if (chipUnassigned) chipUnassigned.classList.add('hidden');
-    if (heroLabel) heroLabel.textContent = `My Pending Deliveries`;
+    if (heroLabel) heroLabel.textContent = `Pending Deliveries (${agentName.split(' ')[0]})`;
+    if (appState.filterPendingTab === 'all') {
+      // Show orders assigned to this agent + unassigned orders
+      pendingBills = allStorePendingBills.filter(b => b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
+    } else if (appState.filterPendingTab === 'my_orders') {
+      pendingBills = allStorePendingBills.filter(b => b.deliveryAgent === agentName);
+    } else if (appState.filterPendingTab === 'Unassigned') {
+      pendingBills = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
+    } else if (appState.filterPendingTab === 'Pending') {
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending' && (b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+    } else if (appState.filterPendingTab === 'Out for Delivery') {
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery' && (b.deliveryAgent === agentName || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+    }
   } else {
-    if (chipUnassigned) chipUnassigned.classList.remove('hidden');
     if (heroLabel) heroLabel.textContent = `All Pending Deliveries`;
+    if (appState.filterPendingTab === 'Pending') {
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending');
+    } else if (appState.filterPendingTab === 'Out for Delivery') {
+      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery');
+    } else if (appState.filterPendingTab === 'Unassigned') {
+      pendingBills = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
+    }
   }
 
-  pendingBills.sort((a, b) => new Date(a.billedDate) - new Date(b.billedDate));
-
   const totalPending = pendingBills.length;
-  const queuedCount = pendingBills.filter(b => b.deliveryStatus === 'Pending').length;
-  const outRoadCount = pendingBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
-  const unassignedCount = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && (!b.deliveryAgent || b.deliveryAgent === 'Unassigned')).length;
+  const queuedCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending').length;
+  const outRoadCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
+  const unassignedCount = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned').length;
 
   if (totalCountEl) totalCountEl.textContent = totalPending;
   if (countAll) countAll.textContent = totalPending;
   if (countQueued) countQueued.textContent = queuedCount;
   if (countOutRoad) countOutRoad.textContent = outRoadCount;
   if (countUnassigned) countUnassigned.textContent = unassignedCount;
+  if (chipUnassigned) chipUnassigned.classList.remove('hidden');
 
   if (pendingBills.length > 0) {
     const oldest = pendingBills[0];
@@ -1325,27 +1344,18 @@ function renderPendingDeliveries() {
     if (oldestDaysEl) oldestDaysEl.textContent = 'All deliveries completed! 🎉';
   }
 
-  let displayList = [...pendingBills];
-  if (appState.filterPendingTab === 'Pending') {
-    displayList = displayList.filter(b => b.deliveryStatus === 'Pending');
-  } else if (appState.filterPendingTab === 'Out for Delivery') {
-    displayList = displayList.filter(b => b.deliveryStatus === 'Out for Delivery');
-  } else if (appState.filterPendingTab === 'Unassigned') {
-    displayList = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && (!b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
-  }
-
-  if (displayList.length === 0) {
+  if (pendingBills.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon text-success"><i class="fa-solid fa-truck-ramp-box"></i></div>
         <h3>No Pending Deliveries</h3>
-        <p>${isAgent ? 'You have no pending deliveries assigned at the moment.' : 'All retail orders have been delivered.'}</p>
+        <p>${isAgent ? 'No pending deliveries in this queue right now.' : 'All retail orders have been delivered.'}</p>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = displayList.map(b => renderBillCardWithQuickActions(b, 'delivery')).join('');
+  container.innerHTML = pendingBills.map(b => renderBillCardWithQuickActions(b, 'delivery')).join('');
 }
 
 // ==========================================
