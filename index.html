@@ -1,0 +1,1761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Retail Bill & Delivery Tracker</title>
+  
+  <!-- Modern Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  
+  <!-- QR Code Generator Library for instant high-res crisp QR codes -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app" class="app-container">
+
+    <!-- ==================== AUTH / LOGIN OVERLAY ==================== -->
+    <div id="auth-screen" class="auth-overlay">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <div class="auth-logo-badge-rad">
+            <img src="logo.png" alt="rad. logo" class="auth-rad-logo" />
+          </div>
+          <span class="auth-cloud-pill"><i class="fa-solid fa-sparkles text-primary"></i> Enterprise Cloud Ready</span>
+          <h1>rad. Retail Command</h1>
+          <p class="auth-subtitle">Deliveries, Fleet Attendance & Order Management</p>
+        </div>
+
+        <!-- SIGN IN FORM -->
+        <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label><i class="fa-solid fa-user-shield"></i> Select Sign In Profile</label>
+            <div class="role-selector-3">
+              <label class="role-option active" id="role-ops-label">
+                <input type="radio" name="auth-role" value="ops" checked onchange="updateRoleSelection('ops')">
+                <div class="role-box">
+                  <i class="fa-solid fa-user-gear"></i>
+                  <span class="role-title">Operations</span>
+                  <span class="role-desc">Add & Assign</span>
+                </div>
+              </label>
+              <label class="role-option" id="role-agent-label">
+                <input type="radio" name="auth-role" value="agent" onchange="updateRoleSelection('agent')">
+                <div class="role-box">
+                  <i class="fa-solid fa-person-biking"></i>
+                  <span class="role-title">Delivery Fleet</span>
+                  <span class="role-desc">Punch & Deliver</span>
+                </div>
+              </label>
+              <label class="role-option" id="role-owner-label">
+                <input type="radio" name="auth-role" value="owner" onchange="updateRoleSelection('owner')">
+                <div class="role-box">
+                  <i class="fa-solid fa-crown"></i>
+                  <span class="role-title">Store Owner</span>
+                  <span class="role-desc">Master Admin</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Staff Account Selector (Dynamically populated with accounts created by Owner) -->
+          <div class="form-group hidden" id="login-agent-picker-group">
+            <label for="login-agent-select"><i class="fa-solid fa-id-card"></i> Delivery Fleet Profile</label>
+            <div class="input-with-icon">
+              <i class="fa-solid fa-user-check"></i>
+              <select id="login-agent-select">
+                <!-- Dynamically populated from registered accounts -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Ops Account Selector -->
+          <div class="form-group hidden" id="login-ops-picker-group">
+            <label for="login-ops-select"><i class="fa-solid fa-user-gear"></i> Operations Profile</label>
+            <div class="input-with-icon">
+              <i class="fa-solid fa-user-tie"></i>
+              <select id="login-ops-select">
+                <!-- Dynamically populated -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Secure Masked PIN Input (No PINs revealed on screen) -->
+          <div class="form-group mt-2">
+            <label for="login-pin"><i class="fa-solid fa-lock text-primary"></i> Passcode / PIN <span class="text-danger">*</span></label>
+            <div class="pin-input-wrapper">
+              <input 
+                type="password" 
+                id="login-pin" 
+                inputmode="numeric" 
+                maxlength="6" 
+                placeholder="Enter 4-Digit PIN" 
+                required 
+                autocomplete="current-password" 
+                value="" 
+              />
+              <button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility('login-pin')" title="Show/Hide PIN">
+                <i class="fa-solid fa-eye" id="login-pin-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block btn-lg mt-3" id="btn-login-submit">
+            <span>Sign In to rad. Workspace</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </form>
+
+        <div class="auth-footer-note">
+          <i class="fa-solid fa-shield-halved text-success"></i> rad. Enterprise Security & Account Manager
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MAIN HEADER ==================== -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="header-brand-logo" onclick="openProfileMenu()" title="rad. Delivery Tracker">
+          <img src="logo.png" alt="rad." class="brand-logo-img" />
+        </div>
+        <div class="header-titles">
+          <h1 id="screen-title">Pending Deliveries</h1>
+          <span class="outlet-badge">
+            <span class="pulse-dot"></span>
+            <span id="outlet-user-info">rad. Express Ops</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <!-- Quick Theme Toggle (Light / Dark) -->
+        <button id="btn-theme-toggle" class="btn-icon-pill" title="Toggle Light / Dark Theme" onclick="toggleAppTheme()">
+          <i class="fa-solid fa-sun" id="theme-toggle-icon"></i>
+          <span class="sync-status-text" id="theme-toggle-label">Theme</span>
+        </button>
+
+        <!-- Quick Flat Search Button -->
+        <button id="btn-header-flat-search" class="btn-icon-pill" title="Search Flat & Settle Multi-Bills" onclick="openQuickFlatSearchModal()">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <span class="sync-status-text">Flat</span>
+        </button>
+
+        <!-- Google Sheet Table Live View Button -->
+        <button id="btn-header-gsheet-view" class="btn-icon-pill" title="Open Google Sheet Live Table View" onclick="openGSheetViewerModal()">
+          <i class="fa-solid fa-table-cells text-success"></i>
+          <span class="sync-status-text">Sheet</span>
+        </button>
+
+        <!-- Agent Live Duty Indicator Pill (Shown for Agents) -->
+        <div id="header-duty-pill" class="header-duty-pill hidden" onclick="navigateToScreen('screen-attendance')" title="Click to view Attendance & Duty Tracker">
+          <span class="pulse-dot"></span>
+          <span id="header-duty-text">ON DUTY</span>
+        </div>
+
+        <!-- Google Sheets Sync Status Indicator (Owner only) -->
+        <button id="btn-header-sync" class="btn-icon-pill hidden" title="Sync with Google Sheets" onclick="triggerManualSync()">
+          <i class="fa-solid fa-arrows-rotate" id="sync-icon"></i>
+          <span class="sync-status-text" id="sync-status-label">Synced</span>
+        </button>
+
+        <!-- User Role Profile Pill -->
+        <div class="user-role-pill" onclick="openProfileMenu()" id="header-user-badge">
+          <i class="fa-solid fa-user-circle"></i>
+          <span id="header-role-text">Ops</span>
+        </div>
+
+        <!-- Quick Logout / Exit Button -->
+        <button class="btn-icon-pill btn-header-logout" title="Sign Out / Switch Account" onclick="logout()">
+          <i class="fa-solid fa-power-off text-danger"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Role Switcher / Quick Profile Drawer -->
+    <div id="profile-modal" class="modal-overlay" onclick="closeProfileMenu(event)">
+      <div class="modal-card modal-compact" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-id-badge"></i> Current Session</h3>
+          <button class="btn-close" onclick="closeProfileMenu()">&times;</button>
+        </div>
+        <div class="profile-info-box">
+          <div class="profile-avatar" id="profile-avatar-icon">
+            <i class="fa-solid fa-user-gear"></i>
+          </div>
+          <div class="profile-details">
+            <h4 id="profile-user-name">Operations Executive</h4>
+            <p id="profile-role-badge" class="badge badge-info">Role: Operations</p>
+          </div>
+        </div>
+        <div class="profile-permissions">
+          <h5><i class="fa-solid fa-shield-halved"></i> Active Permissions:</h5>
+          <ul id="profile-permission-list">
+            <li id="perm-add"><i class="fa-solid fa-check text-success"></i> Add new retail bills</li>
+            <li id="perm-assign"><i class="fa-solid fa-check text-success"></i> Assign delivery agent to orders</li>
+            <li id="perm-status"><i class="fa-solid fa-check text-success"></i> Capture Proof & Collect Payment</li>
+            <li id="perm-dashboard"><i class="fa-solid fa-xmark text-danger"></i> Owner Financial Dashboard (Restricted)</li>
+            <li id="perm-settings"><i class="fa-solid fa-xmark text-danger"></i> Google Sheets / Settings (Owner Only)</li>
+            <li id="perm-edit-amount"><i class="fa-solid fa-xmark text-danger"></i> Edit Bill Amount (Owner Only)</li>
+          </ul>
+        </div>
+        <div class="modal-actions-grid">
+          <button class="btn btn-outline" onclick="switchUserRoleQuick()">
+            <i class="fa-solid fa-repeat"></i> Switch Role
+          </button>
+          <button class="btn btn-danger" onclick="logout()">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Sign Out
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MAIN CONTENT AREA ==================== -->
+    <main class="app-main" id="main-scroll-container">
+
+      <!-- ==================== SCREEN 1: ADD BILL ==================== -->
+      <section id="screen-add-bill" class="app-screen">
+        <div class="screen-banner">
+          <div class="banner-text">
+            <h2>Add New Bill</h2>
+            <p>Create invoice and assign to delivery agent</p>
+          </div>
+          <div class="banner-icon">
+            <i class="fa-solid fa-file-invoice-dollar"></i>
+          </div>
+        </div>
+
+        <form id="add-bill-form" class="form-card" onsubmit="handleCreateBill(event)">
+          <div class="form-grid">
+
+            <!-- Invoice No -->
+            <div class="form-group">
+              <label for="input-invoice-no">
+                <span>Invoice Number <span class="text-danger">*</span></span>
+                <button type="button" class="btn-text-xs" onclick="generateAutoInvoiceNo()">Auto-Gen</button>
+              </label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-hashtag"></i>
+                <input 
+                  type="text" 
+                  id="input-invoice-no" 
+                  placeholder="e.g. INV-2026-1089" 
+                  required 
+                  autocomplete="off"
+                  oninput="checkDuplicateInvoiceLive(this.value)"
+                />
+              </div>
+              <small id="invoice-duplicate-warning" class="input-hint text-danger hidden">
+                <i class="fa-solid fa-triangle-exclamation"></i> Duplicate Invoice! This invoice number already exists.
+              </small>
+            </div>
+
+            <!-- Flat No -->
+            <div class="form-group">
+              <label for="input-flat-no">
+                <span>Flat / Unit No <span class="text-danger">*</span></span>
+                <button type="button" class="btn-text-xs" onclick="checkFlatPendingFromAddForm()">Check Flat Invoices</button>
+              </label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-building-user"></i>
+                <input 
+                  type="text" 
+                  id="input-flat-no" 
+                  placeholder="e.g. A-402, B-1201, Villa-15" 
+                  required 
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <!-- Bill Amount -->
+            <div class="form-group">
+              <label for="input-bill-amount">
+                <span>Bill Amount (₹) <span class="text-danger">*</span></span>
+              </label>
+              <div class="input-with-icon">
+                <span class="input-prefix">₹</span>
+                <input 
+                  type="number" 
+                  id="input-bill-amount" 
+                  placeholder="0.00" 
+                  step="0.01" 
+                  min="1" 
+                  required 
+                  inputmode="decimal"
+                />
+              </div>
+            </div>
+
+            <!-- Billed Date -->
+            <div class="form-group">
+              <label for="input-billed-date">
+                <span>Billed Date <span class="text-danger">*</span></span>
+              </label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-calendar-day"></i>
+                <input 
+                  type="date" 
+                  id="input-billed-date" 
+                  required 
+                  onchange="validateBilledDateNotFuture(this)"
+                />
+              </div>
+            </div>
+
+            <!-- Assign Delivery Agent -->
+            <div class="form-group">
+              <label for="input-assigned-agent">
+                <span><i class="fa-solid fa-person-biking text-primary"></i> Assign Delivery Person</span>
+              </label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-user-tag"></i>
+                <select id="input-assigned-agent">
+                  <option value="Unassigned">-- Unassigned (Queued) --</option>
+                  <option value="Rahul Sharma">Rahul Sharma</option>
+                  <option value="Vikram Singh">Vikram Singh</option>
+                  <option value="Suresh Kumar">Suresh Kumar</option>
+                  <option value="Amit Patel">Amit Patel</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Initial Delivery Status -->
+            <div class="form-group">
+              <label for="input-delivery-status">Delivery Status</label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-truck"></i>
+                <select id="input-delivery-status">
+                  <option value="Pending" selected>Pending (Not dispatched)</option>
+                  <option value="Out for Delivery">Out for Delivery</option>
+                  <option value="Delivered">Delivered</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Remarks -->
+            <div class="form-group full-width">
+              <label for="input-remarks">Remarks / Customer Notes</label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-comment-dots icon-textarea"></i>
+                <textarea 
+                  id="input-remarks" 
+                  rows="2" 
+                  placeholder="Optional delivery instructions or customer notes..."
+                ></textarea>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="form-submit-row">
+            <button type="reset" class="btn btn-outline" onclick="resetAddBillForm()">
+              <i class="fa-solid fa-rotate-left"></i> Reset
+            </button>
+            <button type="submit" class="btn btn-primary btn-lg" id="btn-save-bill">
+              <i class="fa-solid fa-circle-check"></i> Save & Dispatch
+            </button>
+          </div>
+        </form>
+
+        <!-- Recent Bills Added Today Quick Feed -->
+        <div class="recent-adds-section">
+          <div class="section-subhead">
+            <h3><i class="fa-solid fa-clock-rotate-left"></i> Today's Invoices</h3>
+            <span class="badge badge-neutral" id="recent-adds-count">0 today</span>
+          </div>
+          <div id="recent-adds-list" class="bills-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 2: PENDING DELIVERIES ==================== -->
+      <section id="screen-pending-deliveries" class="app-screen active">
+        <!-- Quick Stats Pill Bar -->
+        <div class="screen-hero-bar">
+          <div class="hero-stat-card bg-amber-gradient">
+            <div class="hero-stat-info">
+              <span class="hero-stat-label" id="hero-delivery-label">Pending Deliveries</span>
+              <h2 id="pending-delivery-count">0</h2>
+            </div>
+            <div class="hero-stat-icon">
+              <i class="fa-solid fa-truck-fast"></i>
+            </div>
+          </div>
+          <div class="hero-stat-mini">
+            <span class="stat-caption"><i class="fa-solid fa-arrow-down-wide-short"></i> Oldest First</span>
+            <span class="stat-highlight" id="oldest-pending-days">Oldest: 0 days ago</span>
+          </div>
+        </div>
+
+        <!-- Agent Specific Banner (Shown for Delivery Agent) -->
+        <div id="agent-active-banner" class="agent-banner-box hidden">
+          <div class="agent-banner-info">
+            <i class="fa-solid fa-person-biking text-primary"></i>
+            <div>
+              <strong id="agent-active-name">Rahul Sharma's Route</strong>
+              <small class="block-hint" id="agent-task-count">Showing only orders assigned to you</small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter Sub-Tabs -->
+        <div class="filter-chips-row">
+          <button class="chip active" onclick="filterPendingDeliveries('all', this)">
+            All (<span id="count-all-pending">0</span>)
+          </button>
+          <button class="chip" onclick="filterPendingDeliveries('Pending', this)">
+            <span class="status-dot dot-red"></span> Queued (<span id="count-queued">0</span>)
+          </button>
+          <button class="chip" onclick="filterPendingDeliveries('Out for Delivery', this)">
+            <span class="status-dot dot-yellow"></span> On Road (<span id="count-out-road">0</span>)
+          </button>
+          <button class="chip" id="chip-unassigned-filter" onclick="filterPendingDeliveries('Unassigned', this)">
+            <span class="status-dot dot-urgent"></span> Unassigned (<span id="count-unassigned">0</span>)
+          </button>
+        </div>
+
+        <!-- Pending Bills List Container -->
+        <div id="pending-deliveries-list" class="bills-list">
+          <!-- Rendered dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 3: UNPAID BILLS ==================== -->
+      <section id="screen-unpaid-bills" class="app-screen">
+        <!-- Quick Stats Pill Bar -->
+        <div class="screen-hero-bar">
+          <div class="hero-stat-card bg-red-gradient">
+            <div class="hero-stat-info">
+              <span class="hero-stat-label">Total Unpaid Balance</span>
+              <h2 id="unpaid-bills-total-amt">₹0</h2>
+            </div>
+            <div class="hero-stat-icon">
+              <i class="fa-solid fa-receipt"></i>
+            </div>
+          </div>
+          <div class="hero-stat-mini">
+            <span class="stat-caption"><i class="fa-solid fa-hourglass-half"></i> Sorted by Days Pending</span>
+            <span class="stat-highlight" id="unpaid-bills-count">0 Unpaid Invoices</span>
+          </div>
+        </div>
+
+        <!-- Flat & Invoice Search Bar for Unpaid Bills -->
+        <div class="search-input-wrapper mb-3">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input 
+            type="search" 
+            id="unpaid-bills-search-input" 
+            placeholder="Search Flat # (e.g. A-102) to clear bills..." 
+            oninput="handleUnpaidBillsSearch(this.value)"
+          />
+          <button class="btn-clear-search hidden" id="btn-clear-unpaid-search" onclick="clearUnpaidBillsSearch()">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <!-- Payment Mode Filter Chips -->
+        <div class="filter-chips-row">
+          <button class="chip active" onclick="filterUnpaidBills('all', this)">
+            All Unpaid (<span id="count-all-unpaid">0</span>)
+          </button>
+          <button class="chip" onclick="filterUnpaidBills('7plus', this)">
+            <span class="status-dot dot-urgent"></span> > 7 Days Overdue (<span id="count-overdue-7">0</span>)
+          </button>
+          <button class="chip" onclick="filterUnpaidBills('assigned_to_me', this)" id="chip-unpaid-my-deliveries">
+            <i class="fa-solid fa-person-biking"></i> My Uncollected (<span id="count-my-uncollected">0</span>)
+          </button>
+        </div>
+
+        <!-- Unpaid Bills List Container -->
+        <div id="unpaid-bills-list" class="bills-list">
+          <!-- Rendered dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 4: ALL BILLS & FLAT LOOKUP ==================== -->
+      <section id="screen-all-bills" class="app-screen">
+        <!-- Search & Filter Header -->
+        <div class="search-header-box">
+          <div class="search-input-wrapper">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input 
+              type="search" 
+              id="all-bills-search-input" 
+              placeholder="Search Flat # (e.g. A-102) or Invoice #..." 
+              oninput="handleAllBillsSearch(this.value)"
+            />
+            <button class="btn-clear-search hidden" id="btn-clear-search" onclick="clearAllBillsSearch()">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <!-- Flat Pending Quick Finder Card -->
+          <div class="flat-quick-lookup-box" id="flat-quick-lookup-container">
+            <div class="flat-lookup-header">
+              <span><i class="fa-solid fa-door-open text-primary"></i> <strong>Flat Invoices Lookup</strong></span>
+              <small class="text-muted">Type Flat # above to see statement</small>
+            </div>
+            <div id="flat-pending-summary-banner" class="flat-summary-banner hidden">
+              <!-- Rendered when flat is searched -->
+            </div>
+          </div>
+
+          <div class="all-bills-filters">
+            <!-- Filter Dropdown: Delivery -->
+            <select id="filter-delivery-status" onchange="applyAllBillsFilters()">
+              <option value="all">Delivery: All</option>
+              <option value="Pending">Pending</option>
+              <option value="Out for Delivery">Out for Delivery</option>
+              <option value="Delivered">Delivered</option>
+            </select>
+
+            <!-- Filter Dropdown: Payment -->
+            <select id="filter-payment-status" onchange="applyAllBillsFilters()">
+              <option value="all">Payment: All</option>
+              <option value="Unpaid">Unpaid</option>
+              <option value="Paid">Paid</option>
+            </select>
+
+            <!-- Filter Dropdown: Agent -->
+            <select id="filter-agent-select" onchange="applyAllBillsFilters()">
+              <option value="all">Agent: All</option>
+              <option value="Unassigned">Unassigned</option>
+              <option value="Rahul Sharma">Rahul Sharma</option>
+              <option value="Vikram Singh">Vikram Singh</option>
+              <option value="Suresh Kumar">Suresh Kumar</option>
+              <option value="Amit Patel">Amit Patel</option>
+            </select>
+
+            <!-- Sort Option -->
+            <select id="filter-sort-by" onchange="applyAllBillsFilters()">
+              <option value="date-desc">Newest Billed</option>
+              <option value="date-asc">Oldest Billed</option>
+              <option value="days-desc">Days Pending (High)</option>
+              <option value="amount-desc">Amount (High)</option>
+              <option value="flat-asc">Flat No (A-Z)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="list-summary-bar">
+          <span id="all-bills-count-summary">Showing 0 bills</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-text-xs" onclick="openGSheetViewerModal()">
+              <i class="fa-solid fa-table text-success"></i> G-Sheet View
+            </button>
+            <button class="btn-text-xs" onclick="exportBillsToCSV()">
+              <i class="fa-solid fa-file-excel text-success"></i> Export CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- All Bills List Container -->
+        <div id="all-bills-list" class="bills-list">
+          <!-- Rendered dynamically via JS -->
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 5: ATTENDANCE & DUTY TRACKER ==================== -->
+      <section id="screen-attendance" class="app-screen">
+        <!-- Unified Attendance Date Filter Header -->
+        <div class="attendance-date-filter-bar">
+          <div class="date-filter-chips">
+            <button type="button" class="chip-date active" id="chip-att-date-today" onclick="setAttendanceFilterDate('today')">
+              <i class="fa-solid fa-calendar-day"></i> Today
+            </button>
+            <button type="button" class="chip-date" id="chip-att-date-yesterday" onclick="setAttendanceFilterDate('yesterday')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Yesterday
+            </button>
+            <button type="button" class="chip-date" id="chip-att-date-all" onclick="setAttendanceFilterDate('all')">
+              <i class="fa-solid fa-calendar-week"></i> All Time
+            </button>
+          </div>
+          <div class="date-picker-input-wrap">
+            <i class="fa-solid fa-calendar-alt"></i>
+            <input 
+              type="date" 
+              id="input-attendance-custom-date" 
+              onchange="handleAttendanceCustomDateChange(this.value)"
+              title="Filter attendance by date" 
+            />
+          </div>
+        </div>
+
+        <div class="attendance-date-summary-banner" id="attendance-date-summary-banner">
+          <i class="fa-solid fa-calendar-check text-success"></i>
+          <span>Viewing Shift & Duty Logs: <strong id="att-selected-date-display">Today (06 Oct 2026)</strong></span>
+        </div>
+
+        <!-- AGENT VIEW: Punch In / Out & Live Shift Dashboard -->
+        <div id="agent-attendance-view" class="attendance-container">
+          <!-- Hero Shift Status Card -->
+          <div class="attendance-hero-card" id="agent-duty-hero-card">
+            <div class="duty-hero-top">
+              <div class="agent-avatar-wrap">
+                <div class="agent-avatar-img" id="agent-duty-avatar-icon">
+                  <i class="fa-solid fa-person-biking"></i>
+                </div>
+                <div>
+                  <h3 id="agent-duty-display-name">Rahul Sharma</h3>
+                  <span class="badge badge-outline" id="agent-duty-role-badge">Delivery Fleet Agent</span>
+                </div>
+              </div>
+              
+              <div class="duty-live-badge-wrap">
+                <span class="duty-status-pill status-on-duty" id="agent-live-duty-status">
+                  <span class="pulse-dot"></span>
+                  <span id="agent-duty-status-text">ON DUTY</span>
+                </span>
+              </div>
+            </div>
+
+            <!-- Digital Shift Clock -->
+            <div class="shift-clock-box">
+              <span class="clock-label"><i class="fa-regular fa-clock"></i> Live Shift Duration</span>
+              <div class="shift-timer-display" id="shift-live-timer">00:00:00</div>
+              <small class="clock-subtext" id="shift-start-info">Clocked in at 09:00 AM today</small>
+            </div>
+
+            <!-- Punch In / Out / Break Action Controls -->
+            <div class="punch-actions-grid" id="agent-punch-actions">
+              <!-- Rendered dynamically based on status -->
+            </div>
+          </div>
+
+          <!-- Quick Selfie / Photo Check-In Card -->
+          <div class="attendance-photo-card" id="agent-punch-photo-card">
+            <div class="photo-checkin-header">
+              <span><i class="fa-solid fa-camera text-primary"></i> <strong>Duty Selfie Verification</strong></span>
+              <small class="text-muted" id="photo-checkin-status">Verified for today</small>
+            </div>
+            <div class="photo-checkin-content" id="photo-checkin-preview-wrap">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Shift Earnings & Delivery Summary -->
+          <div class="shift-summary-grid">
+            <div class="shift-stat-box">
+              <div class="stat-icon-wrap bg-green-subtle">
+                <i class="fa-solid fa-box-open text-success"></i>
+              </div>
+              <div>
+                <span class="stat-caption">Delivered Today</span>
+                <h3 id="shift-delivered-count">0 Orders</h3>
+              </div>
+            </div>
+
+            <div class="shift-stat-box">
+              <div class="stat-icon-wrap bg-blue-subtle">
+                <i class="fa-solid fa-money-bill-wave text-primary"></i>
+              </div>
+              <div>
+                <span class="stat-caption">Cash in Hand</span>
+                <h3 id="shift-cash-collected">₹0.00</h3>
+              </div>
+            </div>
+
+            <div class="shift-stat-box full-width">
+              <div class="stat-icon-wrap bg-purple-subtle">
+                <i class="fa-solid fa-qrcode text-purple"></i>
+              </div>
+              <div>
+                <span class="stat-caption">QR / UPI Digital Collected</span>
+                <h3 id="shift-qr-collected">₹0.00</h3>
+              </div>
+            </div>
+          </div>
+
+          <!-- Today's Attendance Activity Log -->
+          <div class="section-subhead mt-3">
+            <h3><i class="fa-solid fa-timeline"></i> Today's Shift Logs</h3>
+            <span class="badge badge-neutral" id="agent-punch-log-count">1 entry</span>
+          </div>
+          <div class="attendance-timeline" id="agent-attendance-timeline">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+        <!-- OPERATIONS & OWNER VIEW: Fleet Real-Time Attendance Command Center -->
+        <div id="ops-attendance-view" class="attendance-container hidden">
+          <div class="screen-hero-bar">
+            <div class="hero-stat-card bg-emerald-gradient">
+              <div class="hero-stat-info">
+                <span class="hero-stat-label">Active Fleet On Duty</span>
+                <h2 id="ops-on-duty-count">3 / 4</h2>
+              </div>
+              <div class="hero-stat-icon">
+                <i class="fa-solid fa-person-biking"></i>
+              </div>
+            </div>
+            <div class="hero-stat-mini">
+              <span class="stat-caption"><i class="fa-solid fa-circle-check text-success"></i> Fleet Status</span>
+              <span class="stat-highlight" id="ops-fleet-status-summary">3 On Duty • 1 Off</span>
+            </div>
+          </div>
+
+          <div class="attendance-fleet-toolbar">
+            <div class="fleet-filter-pills">
+              <button class="chip active" onclick="filterFleetAttendance('all', this)">All (4)</button>
+              <button class="chip" onclick="filterFleetAttendance('on_duty', this)"><span class="status-dot dot-green"></span> On Duty (<span id="count-fleet-onduty">3</span>)</button>
+              <button class="chip" onclick="filterFleetAttendance('off_duty', this)"><span class="status-dot dot-red"></span> Off Duty (<span id="count-fleet-offduty">1</span>)</button>
+            </div>
+            <button class="btn-text-xs" onclick="exportAttendanceToCSV()">
+              <i class="fa-solid fa-file-excel text-success"></i> Export CSV
+            </button>
+          </div>
+
+          <!-- Fleet Agents Roster List -->
+          <div id="fleet-attendance-roster" class="fleet-roster-list">
+            <!-- Rendered dynamically via JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 6: DASHBOARD (OWNER ONLY) ==================== -->
+      <section id="screen-dashboard" class="app-screen">
+        <div class="owner-guard" id="dashboard-owner-guard">
+          <div class="restricted-card">
+            <div class="restricted-icon">
+              <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <h3>Owner Access Only</h3>
+            <p>The Financial & Performance Dashboard is reserved for store owners.</p>
+            <button class="btn btn-primary" onclick="promptOwnerLoginForDashboard()">
+              <i class="fa-solid fa-crown"></i> Unlock Owner Dashboard
+            </button>
+          </div>
+        </div>
+
+        <div class="dashboard-content" id="dashboard-content-body">
+          <div class="dashboard-header-banner">
+            <div>
+              <h2>Store Financial Dashboard</h2>
+              <p>Real-time retail billing, collection & delivery KPIs</p>
+            </div>
+            <div class="owner-badge-live">
+              <i class="fa-solid fa-crown text-warning"></i> Owner View
+            </div>
+          </div>
+
+          <!-- KPI Cards Grid -->
+          <div class="kpi-grid">
+            <div class="kpi-card kpi-blue">
+              <div class="kpi-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-title">Total Billed</span>
+                <h3 id="dash-total-billed">₹0</h3>
+                <span class="kpi-sub" id="dash-total-bills-count">0 total invoices</span>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-green">
+              <div class="kpi-icon"><i class="fa-solid fa-circle-dollar-to-slot"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-title">Total Received</span>
+                <h3 id="dash-total-received">₹0</h3>
+                <span class="kpi-sub text-success" id="dash-collection-rate">0% Collected</span>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-red">
+              <div class="kpi-icon"><i class="fa-solid fa-scale-unbalanced"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-title">Total Outstanding</span>
+                <h3 id="dash-total-outstanding">₹0</h3>
+                <span class="kpi-sub text-danger" id="dash-unpaid-bills-count">0 unpaid invoices</span>
+              </div>
+            </div>
+
+            <div class="kpi-card kpi-amber">
+              <div class="kpi-icon"><i class="fa-solid fa-truck-ramp-box"></i></div>
+              <div class="kpi-info">
+                <span class="kpi-title">Pending Deliveries</span>
+                <h3 id="dash-pending-deliveries-count">0</h3>
+                <span class="kpi-sub text-warning" id="dash-delivery-rate">0% Delivered</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Payment Mode Breakdown -->
+          <div class="dash-card">
+            <div class="card-header">
+              <h4><i class="fa-solid fa-wallet"></i> Payment Mode Breakdown</h4>
+            </div>
+            <div class="payment-modes-kpi-row">
+              <div class="mode-stat-pill bg-green-subtle">
+                <i class="fa-solid fa-money-bill-wave text-success"></i>
+                <div>
+                  <span class="mode-title">CASH</span>
+                  <strong id="dash-mode-cash">₹0</strong>
+                </div>
+              </div>
+              <div class="mode-stat-pill bg-blue-subtle">
+                <i class="fa-solid fa-qrcode text-primary"></i>
+                <div>
+                  <span class="mode-title">QR</span>
+                  <strong id="dash-mode-qr">₹0</strong>
+                </div>
+              </div>
+              <div class="mode-stat-pill bg-purple-subtle">
+                <i class="fa-solid fa-credit-card text-purple"></i>
+                <div>
+                  <span class="mode-title">CARD</span>
+                  <strong id="dash-mode-card">₹0</strong>
+                </div>
+              </div>
+              <div class="mode-stat-pill bg-red-subtle">
+                <i class="fa-solid fa-circle-exclamation text-danger"></i>
+                <div>
+                  <span class="mode-title">UNPAID</span>
+                  <strong id="dash-mode-unpaid">₹0</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Agent Performance Breakdown -->
+          <div class="dash-card">
+            <div class="card-header">
+              <h4><i class="fa-solid fa-person-biking"></i> Agent Delivery Status</h4>
+            </div>
+            <div id="dash-agent-performance-list" class="agent-perf-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Top Aging Debtors / Flats -->
+          <div class="dash-card">
+            <div class="card-header">
+              <h4><i class="fa-solid fa-user-clock"></i> Highest Pending Flats</h4>
+              <span class="badge badge-danger">Attention Required</span>
+            </div>
+            <div id="dash-top-debtors-list" class="debtor-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 6: SETTINGS (OWNER ONLY) ==================== -->
+      <section id="screen-settings" class="app-screen">
+        <div class="screen-banner">
+          <div class="banner-text">
+            <h2>Google Sheets & Settings</h2>
+            <p>Cloud database integration & QR code configuration (Owner Only)</p>
+          </div>
+          <div class="banner-icon">
+            <i class="fa-solid fa-table-columns"></i>
+          </div>
+        </div>
+
+        <!-- Store QR Configuration Card -->
+        <div class="dash-card">
+          <div class="card-header">
+            <h4><i class="fa-solid fa-qrcode text-primary"></i> Store UPI QR Code Settings</h4>
+          </div>
+          <div class="form-group">
+            <label for="input-custom-upi-id"><i class="fa-solid fa-id-badge"></i> Default Store UPI ID</label>
+            <input type="text" id="input-custom-upi-id" value="paytm.s2dxeyt@pty" placeholder="e.g. yourstore@upi" />
+          </div>
+          <div class="form-group">
+            <label for="input-custom-qr-image"><i class="fa-solid fa-image"></i> Custom QR Standee Image (Optional)</label>
+            <input type="file" id="input-custom-qr-image" accept="image/*" onchange="handleCustomQRUpload(event)" />
+            <small class="input-hint">Upload your custom Paytm/PhonePe QR standee image if preferred.</small>
+          </div>
+          <button class="btn btn-primary btn-sm mt-2" onclick="saveStoreQRConfig()">Save QR Settings</button>
+        </div>
+
+        <!-- Google Sheets Integration Card -->
+        <div class="dash-card sheet-config-card">
+          <div class="card-header">
+            <h4><i class="fa-solid fa-file-excel text-success"></i> Google Sheets Connection</h4>
+            <span class="badge badge-success" id="sheet-conn-badge">Ready (Local + Cloud)</span>
+          </div>
+          <p class="config-text">
+            Connect to any Google Sheet via Google Apps Script Webhook. All bills, deliveries, agents, and payment records sync automatically!
+          </p>
+
+          <div class="form-group">
+            <label for="input-gsheet-url"><i class="fa-solid fa-link"></i> Google Apps Script Web App URL</label>
+            <input 
+              type="url" 
+              id="input-gsheet-url" 
+              placeholder="https://script.google.com/macros/s/.../exec" 
+            />
+            <small class="input-hint">Leave blank to use fast local storage, or paste your deployed Apps Script URL.</small>
+          </div>
+
+          <div class="modal-actions-grid">
+            <button class="btn btn-outline" onclick="testGSheetConnection()">
+              <i class="fa-solid fa-satellite-dish"></i> Test & Sync Now
+            </button>
+            <button class="btn btn-primary" onclick="saveGSheetConfig()">
+              <i class="fa-solid fa-floppy-disk"></i> Save URL
+            </button>
+          </div>
+
+          <hr class="card-divider" />
+
+          <!-- Apps Script Code Modal Trigger -->
+          <div class="script-help-box">
+            <div>
+              <h5><i class="fa-solid fa-code"></i> Google Apps Script Code</h5>
+              <p>Copy the ready-to-run Google Apps Script code to sync with your own Google Sheet.</p>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="openAppsScriptModal()">
+              <i class="fa-solid fa-copy"></i> View Code
+            </button>
+          </div>
+        </div>
+
+        <!-- ==================== STAFF & ACCOUNT MANAGEMENT (OWNER ONLY) ==================== -->
+        <div class="dash-card" id="owner-staff-accounts-card">
+          <div class="card-header">
+            <h4><i class="fa-solid fa-users-gear text-primary"></i> Team & Staff Accounts (Owner Only)</h4>
+            <button class="btn btn-sm btn-primary" onclick="openAddStaffModal()">
+              <i class="fa-solid fa-user-plus"></i> Add Staff Account
+            </button>
+          </div>
+          <p class="config-text">
+            Create and manage accounts for Operations Executives and Delivery Boys. Only the Store Owner has permission to create and delete staff accounts.
+          </p>
+
+          <div id="staff-accounts-list" class="staff-accounts-grid">
+            <!-- Dynamically populated from registered accounts -->
+          </div>
+        </div>
+
+        <!-- Data Tools -->
+        <div class="dash-card">
+          <div class="card-header">
+            <h4><i class="fa-solid fa-database"></i> Data Tools & Backup</h4>
+          </div>
+          <div class="data-actions-col">
+            <button class="btn btn-outline btn-block text-left" onclick="loadSampleDataDemo()">
+              <i class="fa-solid fa-wand-magic-sparkles text-primary"></i> 
+              <div>
+                <strong>Load Fresh Sample Invoices</strong>
+                <small class="block-hint">Preloads realistic retail deliveries & agent assignments</small>
+              </div>
+            </button>
+            <button class="btn btn-outline btn-block text-left" onclick="exportBillsToCSV()">
+              <i class="fa-solid fa-file-arrow-down text-success"></i> 
+              <div>
+                <strong>Export All Invoices (CSV / Excel)</strong>
+                <small class="block-hint">Download raw data for offline accounting</small>
+              </div>
+            </button>
+            <button class="btn btn-outline btn-block text-left text-danger" onclick="confirmClearLocalData()">
+              <i class="fa-solid fa-trash-can"></i> 
+              <div>
+                <strong>Clear All Local Bills</strong>
+                <small class="block-hint">Erase current local cache</small>
+              </div>
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ==================== BOTTOM NAVIGATION BAR ==================== -->
+    <nav class="bottom-nav" id="main-bottom-nav">
+      <button class="nav-item" id="nav-tab-add" data-screen="screen-add-bill" onclick="navigateToScreen('screen-add-bill')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-circle-plus"></i>
+        </div>
+        <span class="nav-label">Add Bill</span>
+      </button>
+
+      <button class="nav-item active" id="nav-tab-deliveries" data-screen="screen-pending-deliveries" onclick="navigateToScreen('screen-pending-deliveries')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-truck"></i>
+          <span class="nav-badge hidden" id="nav-pending-badge">0</span>
+        </div>
+        <span class="nav-label">Deliveries</span>
+      </button>
+
+      <button class="nav-item" id="nav-tab-unpaid" data-screen="screen-unpaid-bills" onclick="navigateToScreen('screen-unpaid-bills')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-receipt"></i>
+          <span class="nav-badge bg-danger hidden" id="nav-unpaid-badge">0</span>
+        </div>
+        <span class="nav-label">Unpaid</span>
+      </button>
+
+      <!-- Attendance & Duty Tab (Available to all roles) -->
+      <button class="nav-item" id="nav-tab-attendance" data-screen="screen-attendance" onclick="navigateToScreen('screen-attendance')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-user-clock"></i>
+          <span class="nav-badge bg-green hidden" id="nav-attendance-badge">●</span>
+        </div>
+        <span class="nav-label">Attendance</span>
+      </button>
+
+      <button class="nav-item" id="nav-tab-all" data-screen="screen-all-bills" onclick="navigateToScreen('screen-all-bills')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-list-check"></i>
+        </div>
+        <span class="nav-label">All Bills</span>
+      </button>
+
+      <button class="nav-item" id="nav-tab-dashboard" data-screen="screen-dashboard" onclick="navigateToScreen('screen-dashboard')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-chart-line"></i>
+          <i class="fa-solid fa-crown nav-crown-sub"></i>
+        </div>
+        <span class="nav-label">Dashboard</span>
+      </button>
+
+      <!-- Settings Tab (Visible to Owner ONLY) -->
+      <button class="nav-item hidden" id="nav-tab-settings" data-screen="screen-settings" onclick="navigateToScreen('screen-settings')">
+        <div class="nav-icon-wrapper">
+          <i class="fa-solid fa-gear"></i>
+        </div>
+        <span class="nav-label">Settings</span>
+      </button>
+    </nav>
+
+    <!-- ==================== MODALS & BOTTOM SHEETS ==================== -->
+
+    <!-- BILL DETAIL MODAL -->
+    <div id="bill-detail-modal" class="modal-overlay" onclick="closeBillDetailModal(event)">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div>
+            <span class="sheet-subhead" id="modal-bill-flat" onclick="viewAllInvoicesForCurrentFlat()" style="cursor: pointer;" title="Click to view all pending for this flat">
+              Flat A-101 <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
+            </span>
+            <h3 id="modal-bill-invoice">INV-2026-001</h3>
+          </div>
+          <button class="btn-close-circle" onclick="closeBillDetailModal()">&times;</button>
+        </div>
+
+        <div class="sheet-body">
+          <!-- Status Badges Bar -->
+          <div class="modal-status-bar">
+            <div class="status-pill-group">
+              <span class="label-tiny">Delivery Status</span>
+              <div id="modal-delivery-badge" class="badge badge-status">Pending</div>
+            </div>
+            <div class="status-pill-group">
+              <span class="label-tiny">Payment Status & Mode</span>
+              <div id="modal-payment-badge" class="badge badge-status">Unpaid</div>
+            </div>
+          </div>
+
+          <!-- Assigned Delivery Agent Bar -->
+          <div class="modal-agent-assign-box">
+            <div class="agent-assign-left">
+              <span class="label-tiny"><i class="fa-solid fa-person-biking text-primary"></i> Assigned Delivery Person</span>
+              <strong id="modal-assigned-agent-display">Rahul Sharma</strong>
+            </div>
+            <div id="modal-agent-reassign-wrap" class="agent-assign-right">
+              <select id="modal-reassign-agent-select" onchange="executeReassignAgent(this.value)">
+                <option value="Unassigned">-- Unassigned --</option>
+                <option value="Rahul Sharma">Rahul Sharma</option>
+                <option value="Vikram Singh">Vikram Singh</option>
+                <option value="Suresh Kumar">Suresh Kumar</option>
+                <option value="Amit Patel">Amit Patel</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Financial Breakdown Card -->
+          <div class="modal-financial-card">
+            <div class="fin-row">
+              <span class="fin-label">Total Bill Amount:</span>
+              <div class="fin-amount-group">
+                <span class="fin-value" id="modal-bill-amount">₹0.00</span>
+                <button class="btn-edit-inline hidden" id="btn-owner-edit-amount" onclick="promptOwnerEditBillAmount()" title="Owner only: Edit amount">
+                  <i class="fa-solid fa-pen-to-square"></i> Edit
+                </button>
+              </div>
+            </div>
+            <div class="fin-row total-balance-row">
+              <span class="fin-label">Payment Status:</span>
+              <span class="fin-value" id="modal-balance-amount">₹0.00 (Unpaid)</span>
+            </div>
+          </div>
+
+          <!-- Delivery & Payment Proofs Section in Bill Detail -->
+          <div class="modal-proofs-section" id="modal-proofs-section">
+            <h5 class="proofs-heading"><i class="fa-solid fa-shield-check text-success"></i> Verified Proof Attachments</h5>
+            
+            <div class="proofs-cards-grid">
+              <!-- Delivery Proof Card -->
+              <div class="proof-card-preview" id="preview-delivery-proof-box">
+                <span class="proof-type-label"><i class="fa-solid fa-truck-ramp-box"></i> Delivery Proof</span>
+                <div id="detail-delivery-proof-thumb" class="proof-thumb-wrap">
+                  <span class="no-proof-text"><i class="fa-solid fa-camera"></i> No proof uploaded yet</span>
+                </div>
+                <small id="detail-delivery-proof-time" class="proof-meta-time">-</small>
+              </div>
+
+              <!-- Payment Proof Card -->
+              <div class="proof-card-preview" id="preview-payment-proof-box">
+                <span class="proof-type-label"><i class="fa-solid fa-receipt"></i> Payment Proof</span>
+                <div id="detail-payment-proof-thumb" class="proof-thumb-wrap">
+                  <span class="no-proof-text"><i class="fa-solid fa-receipt"></i> No proof uploaded yet</span>
+                </div>
+                <small id="detail-payment-proof-time" class="proof-meta-time">-</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bill Metadata Grid -->
+          <div class="modal-meta-grid">
+            <div class="meta-item">
+              <span class="meta-label"><i class="fa-regular fa-calendar"></i> Billed Date</span>
+              <strong id="modal-billed-date">-</strong>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label"><i class="fa-solid fa-truck-ramp-box"></i> Delivered Date</span>
+              <strong id="modal-delivered-date">-</strong>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label"><i class="fa-solid fa-wallet"></i> Payment Mode</span>
+              <strong id="modal-payment-mode">UNPAID</strong>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label"><i class="fa-solid fa-hourglass-start"></i> Days Pending</span>
+              <strong id="modal-days-pending" class="text-danger">0 days</strong>
+            </div>
+          </div>
+
+          <!-- Flat Invoices Quick Banner inside Modal -->
+          <div class="modal-flat-other-invoices" id="modal-flat-pending-badge" onclick="viewAllInvoicesForCurrentFlat()">
+            <i class="fa-solid fa-circle-info text-primary"></i>
+            <span id="modal-flat-pending-count-text">Click to view all pending invoices for this flat</span>
+          </div>
+
+          <!-- Remarks Section -->
+          <div class="modal-remarks-box">
+            <div class="remarks-header">
+              <label><i class="fa-regular fa-message"></i> Remarks / Notes</label>
+              <button class="btn-text-xs" onclick="toggleEditRemarks()">
+                <i class="fa-solid fa-pen"></i> <span id="btn-remarks-toggle-text">Edit</span>
+              </button>
+            </div>
+            <p id="modal-remarks-display" class="remarks-content">No remarks recorded.</p>
+            <div id="modal-remarks-edit-wrap" class="hidden">
+              <textarea id="modal-remarks-input" rows="2" class="form-control" placeholder="Add remarks..."></textarea>
+              <button class="btn btn-sm btn-primary mt-2" onclick="saveBillRemarks()">Save Notes</button>
+            </div>
+          </div>
+
+          <!-- ONE-TAP ACTION BUTTONS -->
+          <div class="sheet-action-buttons">
+            <h5 class="action-heading"><i class="fa-solid fa-bolt text-warning"></i> Instant Actions</h5>
+            
+            <div class="action-grid-buttons">
+              <!-- Action 1: Mark Out for Delivery -->
+              <button class="btn btn-action btn-amber" id="btn-action-out-for-delivery" onclick="executeMarkOutForDelivery()">
+                <i class="fa-solid fa-truck-fast"></i>
+                <span>Mark Out for Delivery</span>
+              </button>
+
+              <!-- Action 2: Mark Delivered (Triggers Mandatory Proof Modal) -->
+              <button class="btn btn-action btn-green" id="btn-action-delivered" onclick="openDeliveryProofModalForBill()">
+                <i class="fa-solid fa-camera"></i>
+                <span>Mark Delivered (Add Proof)</span>
+              </button>
+
+              <!-- Action 3: Mark Paid (Triggers QR / Payment Mode + Proof Modal) -->
+              <button class="btn btn-action btn-success full-width" id="btn-action-mark-paid" onclick="openPaymentModeModal()">
+                <i class="fa-solid fa-circle-dollar-to-slot"></i>
+                <span>Collect Payment (CASH / QR / CARD)</span>
+              </button>
+            </div>
+
+            <!-- Owner-only Delete Button -->
+            <button class="btn btn-outline btn-danger btn-block mt-3 hidden" id="btn-owner-delete-bill" onclick="executeOwnerDeleteBill()">
+              <i class="fa-solid fa-trash-can"></i> Delete Bill (Owner Only)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MANDATORY DELIVERY PROOF MODAL ==================== -->
+    <div id="delivery-proof-modal" class="modal-overlay" onclick="closeDeliveryProofModal(event)">
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-camera text-primary"></i> Mandatory Delivery Proof</h3>
+            <small id="delproof-modal-invoice-tag">Invoice: INV-000</small>
+          </div>
+          <button class="btn-close" onclick="closeDeliveryProofModal()">&times;</button>
+        </div>
+
+        <form onsubmit="handleDeliveryProofSubmit(event)">
+          <div class="proof-instruction-box">
+            <i class="fa-solid fa-circle-exclamation text-primary"></i>
+            <span>Photo proof of delivery (package at door / with customer) is required to complete delivery.</span>
+          </div>
+
+          <div class="proof-capture-area mt-3">
+            <input 
+              type="file" 
+              id="input-delivery-proof-file" 
+              accept="image/*" 
+              capture="environment" 
+              required 
+              style="display: none;" 
+              onchange="handleProofImageSelected(event, 'delivery')"
+            />
+
+            <div class="proof-dropzone" id="delproof-dropzone" onclick="document.getElementById('input-delivery-proof-file').click()">
+              <div id="delproof-empty-placeholder" class="dropzone-placeholder">
+                <i class="fa-solid fa-camera-retro camera-big-icon"></i>
+                <strong>Take Photo / Upload Delivery Proof</strong>
+                <span class="btn btn-sm btn-primary mt-2"><i class="fa-solid fa-camera"></i> Open Camera</span>
+              </div>
+              <div id="delproof-preview-wrapper" class="dropzone-preview-wrap hidden">
+                <img id="delproof-preview-img" src="" alt="Delivery Proof Preview" />
+                <button type="button" class="btn-retake" onclick="document.getElementById('input-delivery-proof-file').click()">
+                  <i class="fa-solid fa-arrows-rotate"></i> Retake Photo
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group mt-3">
+            <label for="input-delproof-note"><i class="fa-solid fa-comment-medical"></i> Handover Notes (Optional)</label>
+            <input type="text" id="input-delproof-note" placeholder="e.g. Handed to security / left at door" />
+          </div>
+
+          <div class="modal-actions-grid mt-4">
+            <button type="button" class="btn btn-outline" onclick="closeDeliveryProofModal()">Cancel</button>
+            <button type="submit" class="btn btn-success btn-lg" id="btn-submit-delivery-proof">
+              <i class="fa-solid fa-circle-check"></i> Confirm & Deliver
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ==================== PAYMENT MODE & QR & PAYMENT PROOF MODAL ==================== -->
+    <div id="payment-mode-modal" class="modal-overlay" onclick="closePaymentModeModal(event)">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div>
+            <h3><i class="fa-solid fa-circle-dollar-to-slot text-success"></i> Collect & Mark Paid</h3>
+            <small id="paymodal-invoice-tag">Invoice: INV-000</small>
+          </div>
+          <button class="btn-close-circle" onclick="closePaymentModeModal()">&times;</button>
+        </div>
+
+        <div class="sheet-body">
+          <form onsubmit="handleSelectPaymentModeSubmit(event)">
+            <!-- Top Amount & Flat Header -->
+            <div class="payment-overview-pill">
+              <div>
+                <span id="paymodal-amount-label">Bill Amount:</span>
+                <strong id="paymodal-bill-amount" class="text-success">₹0.00</strong>
+              </div>
+              <div>
+                <span>Flat No:</span>
+                <strong id="paymodal-flat-no">A-101</strong>
+              </div>
+            </div>
+
+            <!-- Invoices Included Chips (Shown for Multi-Bill Payments) -->
+            <div id="paymodal-invoices-chips-wrap" class="paymodal-invoices-chips-wrap hidden">
+              <span class="chips-label"><i class="fa-solid fa-layer-group"></i> Clearing Invoices:</span>
+              <div id="paymodal-invoices-chips" class="invoices-chips-list"></div>
+            </div>
+
+            <!-- Payment Mode Selection -->
+            <div class="form-group mt-3">
+              <label><i class="fa-solid fa-wallet"></i> Select Payment Mode <span class="text-danger">*</span></label>
+              <div class="payment-mode-selector-grid">
+                <label class="mode-pill-large active" id="pill-mode-qr" onclick="highlightPayMode('QR')">
+                  <input type="radio" name="pay-mode-choice" value="QR" checked onchange="highlightPayMode('QR')">
+                  <div class="mode-pill-inner">
+                    <i class="fa-solid fa-qrcode text-primary"></i>
+                    <strong>QR (UPI)</strong>
+                    <span>Scan Store QR</span>
+                  </div>
+                </label>
+
+                <label class="mode-pill-large" id="pill-mode-cash" onclick="highlightPayMode('CASH')">
+                  <input type="radio" name="pay-mode-choice" value="CASH" onchange="highlightPayMode('CASH')">
+                  <div class="mode-pill-inner">
+                    <i class="fa-solid fa-money-bill-wave text-success"></i>
+                    <strong>CASH</strong>
+                    <span>Cash in Hand</span>
+                  </div>
+                </label>
+
+                <label class="mode-pill-large" id="pill-mode-card" onclick="highlightPayMode('CARD')">
+                  <input type="radio" name="pay-mode-choice" value="CARD" onchange="highlightPayMode('CARD')">
+                  <div class="mode-pill-inner">
+                    <i class="fa-solid fa-credit-card text-purple"></i>
+                    <strong>CARD</strong>
+                    <span>POS swipe</span>
+                  </div>
+                </label>
+
+                <label class="mode-pill-large" id="pill-mode-unpaid" onclick="highlightPayMode('UNPAID')">
+                  <input type="radio" name="pay-mode-choice" value="UNPAID" onchange="highlightPayMode('UNPAID')">
+                  <div class="mode-pill-inner">
+                    <i class="fa-solid fa-circle-xmark text-danger"></i>
+                    <strong>UNPAID</strong>
+                    <span>Keep Pending</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- ==================== QR CODE DISPLAY CONTAINER (Requirement 1) ==================== -->
+            <div id="qr-display-section" class="store-qr-card-container">
+              <div class="paytm-qr-standee">
+                <!-- Top Paytm Brand Header matching user's standee -->
+                <div class="standee-header">
+                  <div class="cashback-banner">
+                    <span class="cashback-badge">Get <strong>₹25 CASHBACK</strong></span>
+                    <span class="cashback-sub">Scan in Paytm App</span>
+                  </div>
+                  <div class="paytm-logo-row">
+                    <span class="paytm-brand-text">paytm</span>
+                    <span class="paytm-sub-text">UPI Transfer</span>
+                  </div>
+                </div>
+
+                <!-- Live Dynamic QR Code -->
+                <div class="qr-image-wrapper">
+                  <div id="paytm-live-qrcode" class="qr-canvas-holder"></div>
+                  <!-- Amount overlay badge -->
+                  <div class="qr-amount-pill">
+                    <span>Pay Exact:</span>
+                    <strong id="qr-exact-amount-text">₹0.00</strong>
+                  </div>
+                </div>
+
+                <!-- UPI ID & Apps Footer -->
+                <div class="standee-footer">
+                  <div class="upi-id-box">
+                    <span>UPI ID: <strong id="qr-store-upi-id">paytm.s2dxeyt@pty</strong></span>
+                    <button type="button" class="btn-copy-upi" onclick="copyUPIId()">Copy</button>
+                  </div>
+                  <div class="supported-upi-icons">
+                    <span><i class="fa-brands fa-google-pay"></i> GPay</span>
+                    <span><i class="fa-solid fa-mobile-screen"></i> PhonePe</span>
+                    <span><i class="fa-solid fa-building-columns"></i> BHIM</span>
+                    <span><i class="fa-solid fa-wallet"></i> Paytm</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==================== MANDATORY PAYMENT PROOF SECTION (Requirement 2) ==================== -->
+            <div id="payment-proof-capture-section" class="form-group mt-3">
+              <label for="input-payment-proof-file">
+                <span><i class="fa-solid fa-camera text-success"></i> Payment Proof <span class="text-danger">* Mandatory</span></span>
+                <small class="text-muted">Screenshot / Receipt / Cash photo</small>
+              </label>
+
+              <input 
+                type="file" 
+                id="input-payment-proof-file" 
+                accept="image/*" 
+                capture="environment" 
+                style="display: none;" 
+                onchange="handleProofImageSelected(event, 'payment')"
+              />
+
+              <div class="proof-dropzone proof-dropzone-pay" id="payproof-dropzone" onclick="document.getElementById('input-payment-proof-file').click()">
+                <div id="payproof-empty-placeholder" class="dropzone-placeholder">
+                  <i class="fa-solid fa-camera camera-big-icon text-success"></i>
+                  <strong>Attach UPI Screenshot / Cash Receipt Photo</strong>
+                  <span class="btn btn-sm btn-outline mt-2"><i class="fa-solid fa-cloud-arrow-up"></i> Upload / Capture Proof</span>
+                </div>
+                <div id="payproof-preview-wrapper" class="dropzone-preview-wrap hidden">
+                  <img id="payproof-preview-img" src="" alt="Payment Proof Preview" />
+                  <button type="button" class="btn-retake" onclick="document.getElementById('input-payment-proof-file').click()">
+                    <i class="fa-solid fa-arrows-rotate"></i> Change Photo
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-actions-grid mt-4">
+              <button type="button" class="btn btn-outline" onclick="closePaymentModeModal()">Cancel</button>
+              <button type="submit" class="btn btn-success btn-lg" id="btn-submit-payment-confirm">
+                <i class="fa-solid fa-check"></i> Confirm Payment
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== IMAGE LIGHTBOX MODAL (ENLARGE PROOFS) ==================== -->
+    <div id="lightbox-modal" class="modal-overlay lightbox-overlay" onclick="closeLightboxModal()">
+      <div class="lightbox-content" onclick="event.stopPropagation()">
+        <button class="lightbox-close" onclick="closeLightboxModal()">&times;</button>
+        <h4 id="lightbox-title" class="lightbox-title">Proof Inspection</h4>
+        <div class="lightbox-img-wrap">
+          <img id="lightbox-image" src="" alt="Enlarged Proof" />
+        </div>
+      </div>
+    </div>
+
+    <!-- FLAT PENDING INVOICES MODAL -->
+    <div id="flat-pending-modal" class="modal-overlay" onclick="closeFlatPendingModal(event)">
+      <div class="modal-sheet" onclick="event.stopPropagation()">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div>
+            <span class="sheet-subhead"><i class="fa-solid fa-building-user"></i> Flat Invoices Statement</span>
+            <h3 id="flat-modal-title">Flat A-102</h3>
+          </div>
+          <button class="btn-close-circle" onclick="closeFlatPendingModal()">&times;</button>
+        </div>
+
+        <div class="sheet-body">
+          <div class="flat-modal-summary-card">
+            <div class="f-sum-item">
+              <span>Total Pending Amount</span>
+              <h3 id="flat-modal-total-pending" class="text-danger">₹0.00</h3>
+            </div>
+            <div class="f-sum-item text-right">
+              <span>Pending Invoices</span>
+              <h3 id="flat-modal-count-pending">0</h3>
+            </div>
+          </div>
+
+          <!-- Multi-Invoice Batch Selection & Clear in 1 Payment Bar -->
+          <div id="flat-batch-actions-container" class="flat-batch-card mt-3">
+            <div class="batch-header-row">
+              <label class="batch-select-all-label">
+                <input type="checkbox" id="chk-batch-select-all" onchange="toggleSelectAllFlatPending(this.checked)" checked />
+                <span>Select All Unpaid (<span id="batch-selected-count">0</span>)</span>
+              </label>
+              <div class="batch-total-wrap">
+                <span class="batch-total-caption">Total Selected:</span>
+                <strong id="batch-selected-total-amount" class="text-success">₹0.00</strong>
+              </div>
+            </div>
+
+            <button type="button" class="btn btn-success btn-block btn-lg mt-2" id="btn-batch-pay-selected" onclick="startMultiInvoicePaymentForFlat()">
+              <i class="fa-solid fa-circle-dollar-to-slot"></i> Clear Selected (<span id="btn-batch-amount-text">₹0.00</span>) in 1 Payment
+            </button>
+          </div>
+
+          <div class="section-subhead mt-3">
+            <h4><i class="fa-solid fa-list-ol"></i> Invoices for this Flat (Select to pay)</h4>
+          </div>
+
+          <div id="flat-modal-invoices-list" class="bills-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== QUICK FLAT SEARCH & DIRECT CLEARANCE MODAL ==================== -->
+    <div id="quick-flat-search-modal" class="modal-overlay" onclick="closeQuickFlatSearchModal(event)">
+      <div class="modal-card modal-medium" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-building-user text-primary"></i> Search Flat & Settle Bills</h3>
+            <small>Quickly lookup any flat number to view & clear invoices</small>
+          </div>
+          <button class="btn-close" onclick="closeQuickFlatSearchModal()">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="search-input-wrapper mb-3">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input 
+              type="search" 
+              id="quick-flat-search-input" 
+              placeholder="Type Flat # (e.g. A-102, B-304, C-701)..." 
+              oninput="handleQuickFlatSearchInput(this.value)"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="section-subhead">
+            <h4><i class="fa-solid fa-building"></i> Active Flats with Pending Dues</h4>
+            <span class="badge badge-neutral" id="quick-flat-count-badge">0 flats</span>
+          </div>
+
+          <div id="quick-flat-search-results" class="quick-flat-results-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== GOOGLE SHEET INTERACTIVE LIVE SPREADSHEET VIEWER ==================== -->
+    <div id="gsheet-viewer-modal" class="modal-overlay" onclick="closeGSheetViewerModal(event)">
+      <div class="modal-card modal-full-sheet" onclick="event.stopPropagation()">
+        <!-- Google Sheet Chrome Header -->
+        <div class="gsheet-topbar">
+          <div class="gsheet-title-wrap">
+            <div class="gsheet-doc-icon">
+              <i class="fa-solid fa-file-lines"></i>
+            </div>
+            <div>
+              <div class="gsheet-title-row">
+                <span class="gsheet-main-title">Retail Orders Tracker — Bills Database</span>
+                <span class="gsheet-sync-pill"><span class="pulse-dot"></span> Live Sync Active</span>
+              </div>
+              <div class="gsheet-sub-menu">
+                <span>File</span> <span>Edit</span> <span>View</span> <span>Insert</span> <span>Format</span> <span>Data</span> <span>Tools</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="gsheet-top-actions">
+            <button class="btn btn-sm btn-success" onclick="exportBillsToCSV()">
+              <i class="fa-solid fa-download"></i> Export CSV
+            </button>
+            <button class="btn btn-sm btn-outline" onclick="openAppsScriptModal()">
+              <i class="fa-brands fa-google text-danger"></i> Apps Script Code
+            </button>
+            <button class="btn-close" onclick="closeGSheetViewerModal()">&times;</button>
+          </div>
+        </div>
+
+        <!-- Formula Bar -->
+        <div class="gsheet-formula-bar">
+          <div class="formula-cell-indicator">A1:N<span id="gsheet-row-count-cell">6</span></div>
+          <div class="formula-fx">fx</div>
+          <div class="formula-text-field" id="gsheet-formula-text">=FILTER(Bills!A:N, Bills!A:A&lt;&gt;"")</div>
+          <div class="gsheet-stats-pill" id="gsheet-stats-pill">Total 5 Rows • ₹10,450.00 Total Billed</div>
+        </div>
+
+        <!-- Spreadsheet Table Grid -->
+        <div class="gsheet-grid-container">
+          <table class="gsheet-table" id="gsheet-data-table">
+            <thead>
+              <tr class="gsheet-col-letters-row">
+                <th class="gsheet-corner-cell"></th>
+                <th>A</th>
+                <th>B</th>
+                <th>C</th>
+                <th>D</th>
+                <th>E</th>
+                <th>F</th>
+                <th>G</th>
+                <th>H</th>
+                <th>I</th>
+                <th>J</th>
+                <th>K</th>
+                <th>L</th>
+                <th>M</th>
+                <th>N</th>
+              </tr>
+              <tr class="gsheet-headers-row">
+                <th class="gsheet-row-num">1</th>
+                <th>Invoice No</th>
+                <th>Flat No</th>
+                <th>Bill Amount</th>
+                <th>Billed Date</th>
+                <th>Delivery Agent</th>
+                <th>Delivery Status</th>
+                <th>Delivered Date</th>
+                <th>Payment Status</th>
+                <th>Amount Received</th>
+                <th>Balance</th>
+                <th>Payment Mode</th>
+                <th>Days Pending</th>
+                <th>Remarks</th>
+                <th>Last Updated</th>
+              </tr>
+            </thead>
+            <tbody id="gsheet-table-body">
+              <!-- Rendered dynamically via JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Google Sheet Bottom Sheet Tabs -->
+        <div class="gsheet-bottom-tabs-bar">
+          <button class="btn-tab-add" title="Add Sheet"><i class="fa-solid fa-plus"></i></button>
+          <div class="gsheet-tab active">
+            <i class="fa-solid fa-table text-success"></i>
+            <span>Bills</span>
+            <span class="gsheet-tab-count" id="gsheet-tab-count-badge">5 rows</span>
+          </div>
+          <div class="gsheet-tab">
+            <i class="fa-solid fa-chart-pie text-muted"></i>
+            <span>Analytics</span>
+          </div>
+          <div class="gsheet-tab-filler"></div>
+          <div class="gsheet-status-note">
+            <i class="fa-solid fa-cloud-arrow-up text-success"></i> Connected to Google Sheets API
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GOOGLE APPS SCRIPT CODE MODAL -->
+    <div id="apps-script-modal" class="modal-overlay" onclick="closeAppsScriptModal(event)">
+      <div class="modal-card modal-large" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-brands fa-google text-danger"></i> Google Apps Script Code</h3>
+            <small>Updated schema with Proof URLs, Agent & Payment Modes</small>
+          </div>
+          <button class="btn-close" onclick="closeAppsScriptModal()">&times;</button>
+        </div>
+
+        <div class="apps-script-guide">
+          <div class="guide-steps">
+            <strong>3 Easy Setup Steps:</strong>
+            <ol>
+              <li>Open your Google Sheet, click <strong>Extensions &gt; Apps Script</strong>.</li>
+              <li>Paste the code below into <code>Code.gs</code>, then click <strong>Save</strong>.</li>
+              <li>Click <strong>Deploy &gt; New Deployment</strong> (Web App, Who has access: <em>"Anyone"</em>) and paste the URL into Settings!</li>
+            </ol>
+          </div>
+
+          <div class="code-box-wrapper">
+            <div class="code-box-header">
+              <span>Code.gs</span>
+              <button class="btn-copy-code" onclick="copyAppsScriptCode()">
+                <i class="fa-solid fa-copy"></i> <span id="copy-btn-label">Copy Code</span>
+              </button>
+            </div>
+            <pre><code id="apps-script-code-block"></code></pre>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary btn-block" onclick="closeAppsScriptModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== ATTENDANCE SELFIE / PHOTO PUNCH MODAL ==================== -->
+    <div id="attendance-photo-modal" class="modal-overlay" onclick="closeAttendancePhotoModal(event)">
+      <div class="modal-card modal-compact" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-camera text-primary"></i> Duty Check-In Photo</h3>
+            <small>Capture or upload your selfie / duty start verification</small>
+          </div>
+          <button class="btn-close" onclick="closeAttendancePhotoModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input 
+            type="file" 
+            id="input-attendance-selfie-file" 
+            accept="image/*" 
+            capture="user" 
+            style="display: none;" 
+            onchange="handleAttendancePhotoSelected(event)"
+          />
+          <div class="proof-dropzone" onclick="document.getElementById('input-attendance-selfie-file').click()">
+            <div id="att-photo-placeholder" class="dropzone-placeholder">
+              <i class="fa-solid fa-camera-retro camera-big-icon text-success"></i>
+              <strong>Tap to Capture Selfie / Duty Photo</strong>
+              <span class="btn btn-sm btn-outline mt-2"><i class="fa-solid fa-camera"></i> Open Camera</span>
+            </div>
+            <div id="att-photo-preview-wrap" class="dropzone-preview-wrap hidden">
+              <img id="att-photo-preview-img" src="" alt="Selfie Preview" />
+              <button type="button" class="btn-retake" onclick="document.getElementById('input-attendance-selfie-file').click()">
+                <i class="fa-solid fa-arrows-rotate"></i> Retake Photo
+              </button>
+            </div>
+          </div>
+          
+          <div class="modal-actions-grid mt-3">
+            <button type="button" class="btn btn-outline" onclick="confirmPunchInWithoutPhoto()">Skip Photo</button>
+            <button type="button" class="btn btn-success" onclick="confirmPunchInWithPhoto()">
+              <i class="fa-solid fa-circle-check"></i> Punch In Now
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== CREATE STAFF ACCOUNT MODAL (OWNER ONLY) ==================== -->
+    <div id="add-staff-modal" class="modal-overlay" onclick="closeAddStaffModal(event)">
+      <div class="modal-card modal-compact" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-user-plus text-primary"></i> Create Staff Account</h3>
+            <small>Add new Delivery Boy or Operations Executive</small>
+          </div>
+          <button class="btn-close" onclick="closeAddStaffModal()">&times;</button>
+        </div>
+        <form onsubmit="handleCreateStaffAccountSubmit(event)" class="modal-body">
+          <div class="form-group">
+            <label><i class="fa-solid fa-user-shield"></i> Account Role <span class="text-danger">*</span></label>
+            <div class="role-selector-3">
+              <label class="role-option active" id="newstaff-role-agent-label">
+                <input type="radio" name="newstaff-role" value="agent" checked onchange="updateNewStaffRole('agent')">
+                <div class="role-box">
+                  <i class="fa-solid fa-person-biking"></i>
+                  <span class="role-title">Delivery Fleet</span>
+                </div>
+              </label>
+              <label class="role-option" id="newstaff-role-ops-label">
+                <input type="radio" name="newstaff-role" value="ops" onchange="updateNewStaffRole('ops')">
+                <div class="role-box">
+                  <i class="fa-solid fa-user-gear"></i>
+                  <span class="role-title">Operations</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group mt-2">
+            <label for="newstaff-name"><i class="fa-solid fa-user"></i> Full Name <span class="text-danger">*</span></label>
+            <input type="text" id="newstaff-name" placeholder="e.g. Ramesh Patel" required autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="newstaff-phone"><i class="fa-solid fa-phone"></i> Mobile / Employee ID</label>
+            <input type="tel" id="newstaff-phone" placeholder="e.g. 9812345678" />
+          </div>
+
+          <div class="form-group">
+            <label for="newstaff-pin"><i class="fa-solid fa-key"></i> Set 4-Digit Login PIN <span class="text-danger">*</span></label>
+            <input type="password" id="newstaff-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 5555" required />
+          </div>
+
+          <div class="form-group" id="newstaff-route-group">
+            <label for="newstaff-route"><i class="fa-solid fa-route"></i> Assigned Delivery Zone / Route</label>
+            <input type="text" id="newstaff-route" placeholder="e.g. Block A & B, West Sector" />
+          </div>
+
+          <div class="modal-actions-grid mt-4">
+            <button type="button" class="btn btn-outline" onclick="closeAddStaffModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">
+              <i class="fa-solid fa-circle-check"></i> Create Account
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast-container" class="toast-container"></div>
+
+  </div>
+
+  <!-- App Core JavaScript Logic -->
+  <script src="google-apps-script.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
