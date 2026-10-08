@@ -336,6 +336,11 @@ function recalculateBill(bill) {
     if (!bill.paymentMode || bill.paymentMode === 'UNPAID') {
       bill.paymentMode = 'QR';
     }
+    // If an order is paid, it has been delivered
+    if (bill.deliveryStatus !== 'Delivered') {
+      bill.deliveryStatus = 'Delivered';
+      bill.deliveredDate = bill.deliveredDate || getTodayISODate();
+    }
   } else {
     bill.paymentStatus = 'Unpaid';
     bill.amountReceived = 0;
@@ -2224,7 +2229,9 @@ function openBillDetailModal(invoiceNo) {
   const btnDelivered = document.getElementById('btn-action-delivered');
   const btnPay = document.getElementById('btn-action-mark-paid');
 
-  if (bill.deliveryStatus !== 'Delivered') {
+  const isDelivered = bill.deliveryStatus === 'Delivered' || bill.paymentStatus === 'Paid';
+
+  if (!isDelivered) {
     // Before Delivery: Show delivery controls, HIDE payment button
     if (btnOut) {
       if (bill.deliveryStatus === 'Pending') btnOut.classList.remove('hidden');
@@ -2233,7 +2240,7 @@ function openBillDetailModal(invoiceNo) {
     if (btnDelivered) btnDelivered.classList.remove('hidden');
     if (btnPay) btnPay.classList.add('hidden');
   } else {
-    // After Delivery: Hide delivery controls
+    // After Delivery: Hide all delivery controls
     if (btnOut) btnOut.classList.add('hidden');
     if (btnDelivered) btnDelivered.classList.add('hidden');
 
@@ -2686,6 +2693,7 @@ function handleSelectPaymentModeSubmit(event) {
         b.amountReceived = 0;
         b.balance = b.billAmount;
         b.daysPending = calculateDaysPending(b.billedDate, 'Unpaid');
+        b.lastUpdated = new Date().toISOString();
         triggerAutoCloudSync(b, 'upsert_bill');
       });
       showToast(`Marked ${selectedBills.length} invoices for Flat ${appState.currentViewingFlat} as UNPAID`, 'warning');
@@ -2696,6 +2704,9 @@ function handleSelectPaymentModeSubmit(event) {
         b.amountReceived = b.billAmount;
         b.balance = 0;
         b.daysPending = 0;
+        b.deliveryStatus = 'Delivered';
+        b.deliveredDate = b.deliveredDate || getTodayISODate();
+        b.lastUpdated = new Date().toISOString();
         triggerAutoCloudSync(b, 'upsert_bill');
       });
       showToast(`🎉 Cleared ${selectedBills.length} Invoices for Flat ${appState.currentViewingFlat} (${formatCurrency(totalAmt)}) via ${mode}! 💰`, 'success');
@@ -2722,6 +2733,7 @@ function handleSelectPaymentModeSubmit(event) {
     bill.amountReceived = 0;
     bill.balance = bill.billAmount;
     bill.daysPending = calculateDaysPending(bill.billedDate, 'Unpaid');
+    bill.lastUpdated = new Date().toISOString();
     showToast(`Invoice #${bill.invoiceNo} marked UNPAID`, 'warning');
   } else {
     bill.paymentStatus = 'Paid';
@@ -2729,6 +2741,9 @@ function handleSelectPaymentModeSubmit(event) {
     bill.amountReceived = bill.billAmount;
     bill.balance = 0;
     bill.daysPending = 0;
+    bill.deliveryStatus = 'Delivered';
+    bill.deliveredDate = bill.deliveredDate || getTodayISODate();
+    bill.lastUpdated = new Date().toISOString();
     showToast(`Collected ${formatCurrency(bill.billAmount)} via ${mode}! 💰`, 'success');
   }
 
@@ -3082,36 +3097,33 @@ function mergeCloudBills(cloudBills) {
       localMap.set(invKey, newBill);
       changesCount++;
     } else {
-      // Check if AWS has newer changes or any field discrepancies
-      const isAgentDifferent = !isSameAgent(existing.deliveryAgent, cb.deliveryAgent);
-      const isDelivStatusDiff = existing.deliveryStatus !== (cb.deliveryStatus || existing.deliveryStatus);
-      const isPayStatusDiff = existing.paymentStatus !== (cb.paymentStatus || existing.paymentStatus);
-      const isAmtDiff = Number(existing.billAmount) !== Number(cb.billAmount) || Number(existing.amountReceived) !== Number(cb.amountReceived);
-      const isFlatDiff = existing.flatNo !== (cb.flatNo || existing.flatNo);
-      const isDateDiff = existing.billedDate !== (cb.billedDate || existing.billedDate);
-
       const cloudTime = new Date(cb.lastUpdated || 0).getTime();
       const localTime = new Date(existing.lastUpdated || 0).getTime();
 
-      if (cloudTime >= localTime || isAgentDifferent || isDelivStatusDiff || isPayStatusDiff || isAmtDiff || isFlatDiff || isDateDiff) {
+      // Only apply cloud changes if cloud has a strictly newer timestamp
+      if (cloudTime > localTime) {
         existing.flatNo = cb.flatNo || existing.flatNo;
         existing.billAmount = Number(cb.billAmount) || existing.billAmount;
         existing.billedDate = cb.billedDate || existing.billedDate;
         existing.deliveryAgent = cb.deliveryAgent || existing.deliveryAgent;
         existing.deliveryStatus = cb.deliveryStatus || existing.deliveryStatus;
         existing.deliveredDate = cb.deliveredDate || existing.deliveredDate;
-        if (cb.deliveryProofPhoto) existing.deliveryProofPhoto = cb.deliveryProofPhoto;
+        if (cb.deliveryProof || cb.deliveryProofPhoto) existing.deliveryProof = cb.deliveryProof || cb.deliveryProofPhoto;
         if (cb.deliveryProofTime) existing.deliveryProofTime = cb.deliveryProofTime;
+        if (cb.deliveryLocation) existing.deliveryLocation = cb.deliveryLocation;
         existing.paymentStatus = cb.paymentStatus || existing.paymentStatus;
         existing.amountReceived = Number(cb.amountReceived) || existing.amountReceived;
         existing.balance = Number(cb.balance) || 0;
         existing.paymentMode = cb.paymentMode || existing.paymentMode;
-        if (cb.paymentProofPhoto) existing.paymentProofPhoto = cb.paymentProofPhoto;
+        if (cb.paymentProof || cb.paymentProofPhoto) existing.paymentProof = cb.paymentProof || cb.paymentProofPhoto;
         if (cb.paymentProofTime) existing.paymentProofTime = cb.paymentProofTime;
         existing.daysPending = Number(cb.daysPending) || existing.daysPending;
-        existing.remarks = cb.remarks || existing.remarks;
-        existing.lastUpdated = cb.lastUpdated || new Date().toISOString();
+        existing.remarks = cb.remarks !== undefined ? cb.remarks : existing.remarks;
+        existing.lastUpdated = cb.lastUpdated;
         changesCount++;
+      } else if (localTime > cloudTime) {
+        // Local has newer changes not yet saved to cloud; push to cloud
+        triggerAutoCloudSync(existing, 'upsert_bill');
       }
     }
   });
