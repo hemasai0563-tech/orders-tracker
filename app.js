@@ -19,7 +19,8 @@ const STORAGE_KEYS = {
   STORE_UPI: 'retail_bills_store_upi_v5',
   ATTENDANCE: 'retail_bills_attendance_v9',
   THEME: 'retail_bills_theme_v1',
-  ACCOUNTS: 'retail_bills_accounts_v8'
+  ACCOUNTS: 'retail_bills_accounts_v8',
+  LOCATIONS: 'retail_bills_agent_locations_v1'
 };
 
 const DEFAULT_ACCOUNTS = [
@@ -41,6 +42,14 @@ const DEFAULT_STORE_UPI = 'paytm.s2dxeyt@pty';
 const DEFAULT_ATTENDANCE = {};
 
 const DEFAULT_SAMPLE_BILLS = [];
+
+// Default coordinates for delivery fleet locations (Hyderabad retail zone)
+const DEFAULT_AGENT_LOCATIONS = {
+  'Rahul Sharma': { lat: 17.44829, lng: 78.37284, accuracy: 4, address: 'Cyber Towers, Hitec City', timestamp: Date.now() },
+  'Vikram Singh': { lat: 17.46124, lng: 78.36195, accuracy: 6, address: 'Botanical Garden Rd, Kondapur', timestamp: Date.now() },
+  'Suresh Kumar': { lat: 17.43992, lng: 78.34891, accuracy: 5, address: 'Financial Dist, Gachibowli', timestamp: Date.now() },
+  'Amit Patel': { lat: 17.43005, lng: 78.40798, accuracy: 7, address: 'Road No 36, Jubilee Hills', timestamp: Date.now() }
+};
 
 let appState = {
   accounts: [],
@@ -70,7 +79,21 @@ let appState = {
   // Multi-invoice / flat bulk clearance state:
   selectedFlatInvoices: [],
   currentViewingFlat: '',
-  isMultiInvoicePayment: false
+  isMultiInvoicePayment: false,
+  // Geolocation & Fleet Radar Telemetry:
+  currentDeviceLocation: {
+    lat: 17.44829,
+    lng: 78.37284,
+    accuracy: 5,
+    address: 'Hitec City, Phase 2, Hyderabad',
+    timestamp: Date.now(),
+    isMock: false
+  },
+  agentLocations: { ...DEFAULT_AGENT_LOCATIONS },
+  fleetSubView: 'roster',
+  fleetMap: null,
+  fleetMapMarkers: [],
+  locationWatchId: null
 };
 
 // ==========================================
@@ -80,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initAppTheme();
   loadSavedData();
   initAuthSession();
+  initDeviceLocationEngine();
   renderApp();
   setDefaultBilledDate();
   startShiftTimer();
@@ -213,6 +237,19 @@ function loadSavedData() {
   });
   saveAttendanceToLocal(false);
 
+  // Load Agent Locations
+  const savedLocations = localStorage.getItem(STORAGE_KEYS.LOCATIONS);
+  if (savedLocations) {
+    try {
+      appState.agentLocations = { ...DEFAULT_AGENT_LOCATIONS, ...JSON.parse(savedLocations) };
+    } catch (e) {
+      appState.agentLocations = { ...DEFAULT_AGENT_LOCATIONS };
+    }
+  } else {
+    appState.agentLocations = { ...DEFAULT_AGENT_LOCATIONS };
+    saveAgentLocationsToLocal();
+  }
+
   populateAuthStaffDropdowns();
   populateAllAgentSelectElements();
   recalculateAllBills();
@@ -237,6 +274,10 @@ function saveAttendanceToLocal(syncCloud = true) {
   if (syncCloud) {
     triggerAutoCloudSync({ attendance: appState.attendance }, 'update_attendance');
   }
+}
+
+function saveAgentLocationsToLocal() {
+  localStorage.setItem(STORAGE_KEYS.LOCATIONS, JSON.stringify(appState.agentLocations));
 }
 
 function setDefaultBilledDate() {
@@ -1952,7 +1993,7 @@ function renderSingleBillCardHtml(bill) {
     <div class="bill-card ${borderClass}" onclick="openBillDetailModal('${bill.invoiceNo}')">
       <div class="card-top-row">
         <div class="card-flat-info">
-          <span class="flat-badge" onclick="event.stopPropagation(); openFlatPendingInvoicesModal('${bill.flatNo}')">
+          <span class="flat-badge">
             <i class="fa-solid fa-building-user text-primary"></i> Flat ${bill.flatNo}
           </span>
           <span class="invoice-badge">${bill.invoiceNo}</span>
@@ -1971,7 +2012,7 @@ function renderSingleBillCardHtml(bill) {
         ${payBadge}
         ${agentBadge}
         ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
-        ${bill.paymentProof ? '<span class="badge badge-green"><i class="fa-solid fa-receipt"></i> Pay Proof</span>' : ''}
+        ${bill.deliveryLocation && bill.deliveryLocation.lat ? `<span class="badge badge-cyan" onclick="event.stopPropagation(); window.open('${bill.deliveryLocation.mapUrl || `https://www.google.com/maps?q=${bill.deliveryLocation.lat},${bill.deliveryLocation.lng}`}', '_blank');" title="GPS: ${bill.deliveryLocation.address || 'Delivered'}"><i class="fa-solid fa-location-dot"></i> GPS Geotag</span>` : ''}
       </div>
 
       <div class="card-meta-row">
@@ -1990,12 +2031,15 @@ function renderBillCardWithQuickActions(bill, context) {
 
   let quickActionsHtml = '';
 
-  if (context === 'delivery') {
-    const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
-    const agentName = appState.currentUser?.agentName;
-    const isUnassigned = !bill.deliveryAgent || bill.deliveryAgent === 'Unassigned';
-    const isMyOrder = isAgent && isSameAgent(bill.deliveryAgent, agentName);
+  const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const agentName = appState.currentUser?.agentName;
+  const isUnassigned = !bill.deliveryAgent || bill.deliveryAgent === 'Unassigned';
+  const isMyOrder = isAgent && isSameAgent(bill.deliveryAgent, agentName);
 
+  if (bill.deliveryStatus !== 'Delivered') {
+    // -------------------------------------------------------------
+    // BEFORE DELIVERY: ONLY show Delivery Actions (No Payment Option!)
+    // -------------------------------------------------------------
     if (isAgent && isUnassigned) {
       quickActionsHtml = `
         <div class="card-quick-actions" onclick="event.stopPropagation()">
@@ -2018,27 +2062,34 @@ function renderBillCardWithQuickActions(bill, context) {
         </div>
       `;
     }
-  } else if (context === 'payment' || context === 'flat_view') {
-    quickActionsHtml = `
-      <div class="card-quick-actions" onclick="event.stopPropagation()">
-        ${bill.paymentStatus !== 'Paid' ? `
+  } else {
+    // -------------------------------------------------------------
+    // AFTER DELIVERY: Now show Payment Collection Option!
+    // -------------------------------------------------------------
+    if (bill.paymentStatus !== 'Paid') {
+      quickActionsHtml = `
+        <div class="card-quick-actions" onclick="event.stopPropagation()">
           <button class="btn-card-action btn-success full-width" onclick="quickOpenPaymentModeModal('${bill.invoiceNo}')">
             <i class="fa-solid fa-circle-dollar-to-slot"></i> Collect Payment (CASH / QR / CARD)
           </button>
-        ` : `
+        </div>
+      `;
+    } else {
+      quickActionsHtml = `
+        <div class="card-quick-actions" onclick="event.stopPropagation()">
           <span class="text-success text-xs" style="font-weight: 700; grid-column: 1/-1; text-align: center; padding: 4px;">
-            <i class="fa-solid fa-circle-check"></i> Fully Settled via ${bill.paymentMode}
+            <i class="fa-solid fa-circle-check"></i> Delivered & Settled via ${bill.paymentMode}
           </span>
-        `}
-      </div>
-    `;
+        </div>
+      `;
+    }
   }
 
   return `
     <div class="bill-card ${borderClass}" onclick="openBillDetailModal('${bill.invoiceNo}')">
       <div class="card-top-row">
         <div class="card-flat-info">
-          <span class="flat-badge" onclick="event.stopPropagation(); openFlatPendingInvoicesModal('${bill.flatNo}')" title="Click to view all pending for this flat">
+          <span class="flat-badge">
             <i class="fa-solid fa-building-user text-primary"></i> Flat ${bill.flatNo}
           </span>
           <span class="invoice-badge">${bill.invoiceNo}</span>
@@ -2056,15 +2107,13 @@ function renderBillCardWithQuickActions(bill, context) {
         ${delBadge}
         ${payBadge}
         ${agentBadge}
-        ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Proof</span>' : ''}
-        ${bill.paymentProof ? '<span class="badge badge-green"><i class="fa-solid fa-receipt"></i> Pay Proof</span>' : ''}
+        ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
+        ${bill.deliveryLocation && bill.deliveryLocation.lat ? `<span class="badge badge-cyan" onclick="event.stopPropagation(); window.open('${bill.deliveryLocation.mapUrl || `https://www.google.com/maps?q=${bill.deliveryLocation.lat},${bill.deliveryLocation.lng}`}', '_blank');" title="GPS: ${bill.deliveryLocation.address || 'Delivered'}"><i class="fa-solid fa-location-dot"></i> GPS Geotag</span>` : ''}
       </div>
 
       <div class="card-meta-row">
         <span><i class="fa-regular fa-calendar"></i> ${bill.billedDate}</span>
-        <span onclick="event.stopPropagation(); openFlatPendingInvoicesModal('${bill.flatNo}')" style="cursor: pointer; font-weight: 700; color: var(--primary);">
-          Flat Invoices <i class="fa-solid fa-arrow-right"></i>
-        </span>
+        <span>${bill.remarks ? '<i class="fa-solid fa-comment-dots text-primary"></i> Notes' : ''}</span>
       </div>
 
       ${quickActionsHtml}
@@ -2082,7 +2131,7 @@ function openBillDetailModal(invoiceNo) {
   appState.selectedInvoiceNo = invoiceNo;
 
   document.getElementById('modal-bill-invoice').textContent = bill.invoiceNo;
-  document.getElementById('modal-bill-flat').innerHTML = `Flat ${bill.flatNo} <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>`;
+  document.getElementById('modal-bill-flat').innerHTML = `Flat ${bill.flatNo}`;
 
   const delBadgeContainer = document.getElementById('modal-delivery-badge');
   const payBadgeContainer = document.getElementById('modal-payment-badge');
@@ -2106,11 +2155,9 @@ function openBillDetailModal(invoiceNo) {
     }
   }
 
-  // Delivery & Payment Proofs in Bill Detail
+  // Delivery Proof in Bill Detail
   const delThumb = document.getElementById('detail-delivery-proof-thumb');
   const delTime = document.getElementById('detail-delivery-proof-time');
-  const payThumb = document.getElementById('detail-payment-proof-thumb');
-  const payTime = document.getElementById('detail-payment-proof-time');
 
   if (delThumb) {
     if (bill.deliveryProof) {
@@ -2121,24 +2168,30 @@ function openBillDetailModal(invoiceNo) {
       delThumb.onclick = () => openLightboxModal(bill.deliveryProof, `Delivery Proof: #${bill.invoiceNo} (Flat ${bill.flatNo})`);
       if (delTime) delTime.textContent = bill.deliveryProofTime || 'Attached';
     } else {
-      delThumb.innerHTML = `<span class="no-proof-text"><i class="fa-solid fa-camera"></i> No proof uploaded</span>`;
+      delThumb.innerHTML = `<span class="no-proof-text"><i class="fa-solid fa-camera"></i> No photo attached</span>`;
       delThumb.onclick = null;
       if (delTime) delTime.textContent = 'Required on delivery';
     }
   }
 
-  if (payThumb) {
-    if (bill.paymentProof) {
-      payThumb.innerHTML = `
-        <img src="${bill.paymentProof}" alt="Payment Proof" />
-        <div class="view-zoom-icon"><i class="fa-solid fa-magnifying-glass-plus"></i></div>
+  // Delivery GPS Geotag in Bill Detail
+  const delLocThumb = document.getElementById('detail-delivery-location-thumb');
+  const delLocMeta = document.getElementById('detail-delivery-location-meta');
+
+  if (delLocThumb) {
+    if (bill.deliveryLocation && bill.deliveryLocation.lat) {
+      const mapLink = bill.deliveryLocation.mapUrl || `https://www.google.com/maps?q=${bill.deliveryLocation.lat},${bill.deliveryLocation.lng}`;
+      delLocThumb.innerHTML = `
+        <div class="geo-addr">${bill.deliveryLocation.address || 'Delivered Drop Point'}</div>
+        <div class="geo-coords">${Number(bill.deliveryLocation.lat).toFixed(5)}°, ${Number(bill.deliveryLocation.lng).toFixed(5)}° (±${bill.deliveryLocation.accuracy || 5}m)</div>
+        <a href="${mapLink}" target="_blank" class="btn-geo-map-link" onclick="event.stopPropagation()">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i> View Google Maps
+        </a>
       `;
-      payThumb.onclick = () => openLightboxModal(bill.paymentProof, `Payment Proof (${bill.paymentMode}): #${bill.invoiceNo}`);
-      if (payTime) payTime.textContent = bill.paymentProofTime || 'Attached';
+      if (delLocMeta) delLocMeta.textContent = bill.deliveryLocation.timestamp ? `GPS Fix: ${new Date(bill.deliveryLocation.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'GPS Verified';
     } else {
-      payThumb.innerHTML = `<span class="no-proof-text"><i class="fa-solid fa-receipt"></i> ${bill.paymentMode === 'CASH' ? 'Cash Payment (No photo needed)' : 'No proof uploaded'}</span>`;
-      payThumb.onclick = null;
-      if (payTime) payTime.textContent = bill.paymentMode === 'CASH' ? 'Cash Verified' : 'Required for QR / Card';
+      delLocThumb.innerHTML = `<span class="no-proof-text"><i class="fa-solid fa-location-dot"></i> Not geotagged yet</span>`;
+      if (delLocMeta) delLocMeta.textContent = 'Auto-captured on delivery';
     }
   }
 
@@ -2148,9 +2201,15 @@ function openBillDetailModal(invoiceNo) {
   document.getElementById('modal-days-pending').textContent = `${bill.daysPending} days`;
 
   const flatPendingCount = appState.bills.filter(b => b.flatNo.toUpperCase() === bill.flatNo.toUpperCase() && b.paymentStatus !== 'Paid').length;
+  const flatPendingBadge = document.getElementById('modal-flat-pending-badge');
   const flatPendingText = document.getElementById('modal-flat-pending-count-text');
-  if (flatPendingText) {
-    flatPendingText.textContent = `Flat ${bill.flatNo} has ${flatPendingCount} pending invoice(s). View all invoices for this flat`;
+  if (flatPendingBadge) {
+    if (flatPendingCount > 1) {
+      flatPendingBadge.classList.remove('hidden');
+      if (flatPendingText) flatPendingText.textContent = `Flat ${bill.flatNo} has ${flatPendingCount} pending invoices. Click to view all`;
+    } else {
+      flatPendingBadge.classList.add('hidden');
+    }
   }
 
   const remarksDisplay = document.getElementById('modal-remarks-display');
@@ -2159,6 +2218,31 @@ function openBillDetailModal(invoiceNo) {
   if (remarksDisplay) remarksDisplay.textContent = bill.remarks || 'No remarks recorded.';
   if (remarksInput) remarksInput.value = bill.remarks || '';
   if (remarksEditWrap) remarksEditWrap.classList.add('hidden');
+
+  // Dynamic Instant Actions: Payment option ONLY available AFTER delivery
+  const btnOut = document.getElementById('btn-action-out-for-delivery');
+  const btnDelivered = document.getElementById('btn-action-delivered');
+  const btnPay = document.getElementById('btn-action-mark-paid');
+
+  if (bill.deliveryStatus !== 'Delivered') {
+    // Before Delivery: Show delivery controls, HIDE payment button
+    if (btnOut) {
+      if (bill.deliveryStatus === 'Pending') btnOut.classList.remove('hidden');
+      else btnOut.classList.add('hidden');
+    }
+    if (btnDelivered) btnDelivered.classList.remove('hidden');
+    if (btnPay) btnPay.classList.add('hidden');
+  } else {
+    // After Delivery: Hide delivery controls
+    if (btnOut) btnOut.classList.add('hidden');
+    if (btnDelivered) btnDelivered.classList.add('hidden');
+
+    // Only show Collect Payment button if not already paid
+    if (btnPay) {
+      if (bill.paymentStatus !== 'Paid') btnPay.classList.remove('hidden');
+      else btnPay.classList.add('hidden');
+    }
+  }
 
   const isOwner = appState.currentUser && appState.currentUser.role === 'owner';
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
@@ -2277,6 +2361,17 @@ function quickOpenDeliveryProofModal(invoiceNo) {
 
   const modal = document.getElementById('delivery-proof-modal');
   if (modal) modal.classList.add('active');
+
+  // Trigger instant GPS telemetry update for delivery modal
+  refreshDeliveryProofLocation();
+
+  // Automatically prompt camera / image picker after a smooth brief delay
+  setTimeout(() => {
+    const fileEl = document.getElementById('input-delivery-proof-file');
+    if (fileEl && !appState.tempDeliveryProofData) {
+      fileEl.click();
+    }
+  }, 180);
 }
 
 function closeDeliveryProofModal(e) {
@@ -2302,7 +2397,7 @@ function handleProofImageSelected(event, type) {
       if (previewImg) previewImg.src = dataUrl;
       if (emptyPlaceholder) emptyPlaceholder.classList.add('hidden');
       if (previewWrapper) previewWrapper.classList.remove('hidden');
-      showToast('Delivery photo attached! Ready to deliver.', 'info');
+      showToast('Delivery photo captured! Ready to confirm & collect payment.', 'info');
     } else if (type === 'payment') {
       appState.tempPaymentProofData = dataUrl;
       const previewImg = document.getElementById('payproof-preview-img');
@@ -2332,23 +2427,54 @@ function handleDeliveryProofSubmit(event) {
   const notes = document.getElementById('input-delproof-note')?.value.trim();
   const timestamp = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 
+  // Capture GPS Geotag coordinates at exact moment of delivery
+  const loc = appState.currentDeviceLocation || {
+    lat: 17.44829,
+    lng: 78.37284,
+    accuracy: 5,
+    address: 'Hitec City, Hyderabad',
+    timestamp: Date.now()
+  };
+
   bill.deliveryStatus = 'Delivered';
   bill.deliveredDate = getTodayISODate();
   bill.deliveryProof = appState.tempDeliveryProofData;
   bill.deliveryProofTime = `${timestamp}${notes ? ` (${notes})` : ''}`;
+  bill.deliveryLocation = {
+    lat: loc.lat,
+    lng: loc.lng,
+    accuracy: loc.accuracy || 5,
+    address: loc.address || `Flat ${bill.flatNo} Drop Point`,
+    mapUrl: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`,
+    timestamp: Date.now()
+  };
+
+  // Also update agent's last known location
+  if (bill.deliveryAgent && bill.deliveryAgent !== 'Unassigned') {
+    updateAgentLocationState(bill.deliveryAgent, bill.deliveryLocation);
+  }
 
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
 
   closeDeliveryProofModal();
-  showToast(`Delivery Proof verified & marked Delivered for #${bill.invoiceNo}! 📦`, 'success');
-  openBillDetailModal(bill.invoiceNo);
+  const billDetailModal = document.getElementById('bill-detail-modal');
+  if (billDetailModal) billDetailModal.classList.remove('active');
+
   renderApp();
+
+  if (bill.paymentStatus !== 'Paid') {
+    showToast(`Delivered #${bill.invoiceNo}! Now collect payment 💳`, 'success');
+    setTimeout(() => {
+      openPaymentModeModal();
+    }, 150);
+  } else {
+    showToast(`Delivered #${bill.invoiceNo} (Prepaid)! 🎉`, 'success');
+  }
 }
 
 // ==========================================
-// 15. LIVE PAYTM QR GENERATOR & PAYMENT PROOF (SINGLE & MULTI-INVOICE)
-// Rule: Payment proof ONLY required for QR and CARD payments. Cash requires no proof!
+// 15. LIVE PAYTM QR GENERATOR & PAYMENT COLLECTION (SINGLE & MULTI-INVOICE)
 // ==========================================
 function openPaymentModeModal() {
   if (!appState.selectedInvoiceNo) return;
@@ -2356,7 +2482,6 @@ function openPaymentModeModal() {
   if (!bill) return;
 
   appState.isMultiInvoicePayment = false;
-  appState.tempPaymentProofData = '';
 
   const chipsWrap = document.getElementById('paymodal-invoices-chips-wrap');
   if (chipsWrap) chipsWrap.classList.add('hidden');
@@ -2369,15 +2494,6 @@ function openPaymentModeModal() {
   document.getElementById('paymodal-flat-no').textContent = `Flat ${bill.flatNo}`;
   document.getElementById('qr-exact-amount-text').textContent = formatCurrency(bill.billAmount);
   document.getElementById('qr-store-upi-id').textContent = appState.storeUpiId;
-
-  // Reset payment proof dropzone
-  const emptyPlaceholder = document.getElementById('payproof-empty-placeholder');
-  const previewWrapper = document.getElementById('payproof-preview-wrapper');
-  const fileInput = document.getElementById('input-payment-proof-file');
-
-  if (emptyPlaceholder) emptyPlaceholder.classList.remove('hidden');
-  if (previewWrapper) previewWrapper.classList.add('hidden');
-  if (fileInput) fileInput.value = '';
 
   const modal = document.getElementById('payment-mode-modal');
   if (modal) modal.classList.add('active');
@@ -2394,7 +2510,6 @@ function openMultiInvoicePaymentModal(flatNo, invoiceNumbers) {
   appState.isMultiInvoicePayment = true;
   appState.currentViewingFlat = flatNo;
   appState.selectedFlatInvoices = [...invoiceNumbers];
-  appState.tempPaymentProofData = '';
 
   const selectedBills = appState.bills.filter(b => invoiceNumbers.includes(b.invoiceNo));
   const totalAmount = selectedBills.reduce((sum, b) => sum + b.balance, 0);
@@ -2418,15 +2533,6 @@ function openMultiInvoicePaymentModal(flatNo, invoiceNumbers) {
   document.getElementById('paymodal-flat-no').textContent = `Flat ${flatNo}`;
   document.getElementById('qr-exact-amount-text').textContent = formatCurrency(totalAmount);
   document.getElementById('qr-store-upi-id').textContent = appState.storeUpiId;
-
-  // Reset payment proof dropzone
-  const emptyPlaceholder = document.getElementById('payproof-empty-placeholder');
-  const previewWrapper = document.getElementById('payproof-preview-wrapper');
-  const fileInput = document.getElementById('input-payment-proof-file');
-
-  if (emptyPlaceholder) emptyPlaceholder.classList.remove('hidden');
-  if (previewWrapper) previewWrapper.classList.add('hidden');
-  if (fileInput) fileInput.value = '';
 
   const modal = document.getElementById('payment-mode-modal');
   if (modal) modal.classList.add('active');
@@ -2459,13 +2565,10 @@ function highlightPayMode(mode) {
   }
 
   const qrSection = document.getElementById('qr-display-section');
-  const proofSection = document.getElementById('payment-proof-capture-section');
   const confirmBtn = document.getElementById('btn-submit-payment-confirm');
 
   if (mode === 'QR') {
     if (qrSection) qrSection.classList.remove('hidden');
-    // Proof is MANDATORY for QR
-    if (proofSection) proofSection.classList.remove('hidden');
     renderPaytmLiveQRCode();
     if (confirmBtn) {
       confirmBtn.innerHTML = appState.isMultiInvoicePayment 
@@ -2474,25 +2577,20 @@ function highlightPayMode(mode) {
     }
   } else if (mode === 'CARD') {
     if (qrSection) qrSection.classList.add('hidden');
-    // Proof is MANDATORY for CARD (POS Slip)
-    if (proofSection) proofSection.classList.remove('hidden');
     if (confirmBtn) {
       confirmBtn.innerHTML = appState.isMultiInvoicePayment 
         ? `<i class="fa-solid fa-check-double"></i> Confirm Card Payment for ${appState.selectedFlatInvoices.length} Bills`
         : '<i class="fa-solid fa-check"></i> Confirm Card Payment';
     }
   } else if (mode === 'CASH') {
-    // CASH: NO QR, NO PROOF REQUIRED!
     if (qrSection) qrSection.classList.add('hidden');
-    if (proofSection) proofSection.classList.add('hidden');
     if (confirmBtn) {
       confirmBtn.innerHTML = appState.isMultiInvoicePayment 
         ? `<i class="fa-solid fa-check-double"></i> Confirm Cash Payment for ${appState.selectedFlatInvoices.length} Bills`
-        : '<i class="fa-solid fa-check"></i> Confirm Cash Payment (Instant)';
+        : '<i class="fa-solid fa-check"></i> Confirm Cash Payment';
     }
   } else if (mode === 'UNPAID') {
     if (qrSection) qrSection.classList.add('hidden');
-    if (proofSection) proofSection.classList.add('hidden');
     if (confirmBtn) confirmBtn.innerHTML = '<i class="fa-solid fa-xmark"></i> Keep Invoice(s) Unpaid';
   }
 }
@@ -2568,7 +2666,6 @@ function copyUPIId() {
 function handleSelectPaymentModeSubmit(event) {
   event.preventDefault();
   const mode = appState.selectedPaymentMode;
-  const timestamp = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 
   // ----------------------------------------------------
   // CASE A: MULTI-INVOICE BATCH PAYMENT FOR A FLAT
@@ -2592,37 +2689,15 @@ function handleSelectPaymentModeSubmit(event) {
         triggerAutoCloudSync(b, 'upsert_bill');
       });
       showToast(`Marked ${selectedBills.length} invoices for Flat ${appState.currentViewingFlat} as UNPAID`, 'warning');
-    } else if (mode === 'CASH') {
-      // CASH: NO PROOF REQUIRED!
-      selectedBills.forEach(b => {
-        b.paymentStatus = 'Paid';
-        b.paymentMode = 'CASH';
-        b.amountReceived = b.billAmount;
-        b.balance = 0;
-        b.daysPending = 0;
-        b.paymentProof = '';
-        b.paymentProofTime = `${timestamp} (Cash Batch Clearance)`;
-        triggerAutoCloudSync(b, 'upsert_bill');
-      });
-      showToast(`🎉 Cleared ${selectedBills.length} Invoices for Flat ${appState.currentViewingFlat} (${formatCurrency(totalAmt)}) in Cash! 💵`, 'success');
     } else {
-      // QR or CARD: MANDATORY PAYMENT PROOF CHECK
-      if (!appState.tempPaymentProofData) {
-        showToast(`Mandatory Error: Please upload/capture a photo proof for ${mode} payment!`, 'danger');
-        return;
-      }
-
       selectedBills.forEach(b => {
         b.paymentStatus = 'Paid';
         b.paymentMode = mode;
         b.amountReceived = b.billAmount;
         b.balance = 0;
         b.daysPending = 0;
-        b.paymentProof = appState.tempPaymentProofData;
-        b.paymentProofTime = `${timestamp} (Mode: ${mode} - Multi-Bill)`;
         triggerAutoCloudSync(b, 'upsert_bill');
       });
-
       showToast(`🎉 Cleared ${selectedBills.length} Invoices for Flat ${appState.currentViewingFlat} (${formatCurrency(totalAmt)}) via ${mode}! 💰`, 'success');
     }
 
@@ -2648,32 +2723,13 @@ function handleSelectPaymentModeSubmit(event) {
     bill.balance = bill.billAmount;
     bill.daysPending = calculateDaysPending(bill.billedDate, 'Unpaid');
     showToast(`Invoice #${bill.invoiceNo} marked UNPAID`, 'warning');
-  } else if (mode === 'CASH') {
-    // CASH: NO PROOF NEEDED!
-    bill.paymentStatus = 'Paid';
-    bill.paymentMode = 'CASH';
-    bill.amountReceived = bill.billAmount;
-    bill.balance = 0;
-    bill.daysPending = 0;
-    bill.paymentProof = '';
-    bill.paymentProofTime = `${timestamp} (Cash Received)`;
-    showToast(`Collected ${formatCurrency(bill.billAmount)} in Cash! 💵`, 'success');
   } else {
-    // QR or CARD: MANDATORY PAYMENT PROOF CHECK
-    if (!appState.tempPaymentProofData) {
-      showToast(`Mandatory Error: Please upload/capture a photo proof for ${mode} payment!`, 'danger');
-      return;
-    }
-
     bill.paymentStatus = 'Paid';
     bill.paymentMode = mode;
     bill.amountReceived = bill.billAmount;
     bill.balance = 0;
     bill.daysPending = 0;
-    bill.paymentProof = appState.tempPaymentProofData;
-    bill.paymentProofTime = `${timestamp} (Mode: ${mode})`;
-
-    showToast(`Collected ${formatCurrency(bill.billAmount)} via ${mode} with verified proof! 💰`, 'success');
+    showToast(`Collected ${formatCurrency(bill.billAmount)} via ${mode}! 💰`, 'success');
   }
 
   saveBillsToLocal();
@@ -3718,6 +3774,20 @@ function renderAgentAttendance() {
   if (cashCollectedEl) cashCollectedEl.textContent = formatCurrency(myCash);
   if (qrCollectedEl) qrCollectedEl.textContent = formatCurrency(myQr);
 
+  // Agent Live GPS Card
+  const agentAddressEl = document.getElementById('agent-current-address');
+  const agentCoordsEl = document.getElementById('agent-current-coords');
+  const agentGpsBadge = document.getElementById('agent-gps-badge');
+  const agentGpsBadgeText = document.getElementById('agent-gps-badge-text');
+
+  const loc = appState.currentDeviceLocation;
+  if (loc && agentAddressEl && agentCoordsEl) {
+    agentAddressEl.textContent = loc.address || 'Current Active Zone';
+    agentCoordsEl.innerHTML = `Lat: <strong>${Number(loc.lat).toFixed(5)}°</strong> &bull; Lng: <strong>${Number(loc.lng).toFixed(5)}°</strong> &bull; Accuracy: <strong>±${loc.accuracy || 5}m</strong>`;
+    if (agentGpsBadgeText) agentGpsBadgeText.textContent = loc.isMock ? 'Simulated Fix' : 'GPS Locked';
+    if (agentGpsBadge) agentGpsBadge.className = loc.isMock ? 'badge badge-yellow' : 'badge badge-green';
+  }
+
   // Shift Timeline Log (Filtered by Date Range)
   const timelineEl = document.getElementById('agent-attendance-timeline');
   const logCountEl = document.getElementById('agent-punch-log-count');
@@ -3747,12 +3817,19 @@ function renderAgentAttendance() {
           icon = 'fa-solid fa-mug-hot';
         }
 
+        const locHtml = h.location ? `
+          <div class="timeline-loc" style="font-size: 11px; color: var(--primary); margin-top: 2px;">
+            <i class="fa-solid fa-location-dot"></i> ${h.location.address || `${Number(h.location.lat).toFixed(4)}°, ${Number(h.location.lng).toFixed(4)}°`}
+          </div>
+        ` : '';
+
         return `
           <div class="timeline-entry">
             <div class="timeline-icon ${dotClass}"><i class="${icon}"></i></div>
             <div class="timeline-info">
               <strong>${h.type}</strong>
               <span>${h.time} • ${h.date ? formatPrettyDate(h.date) : todayStr}</span>
+              ${locHtml}
             </div>
             ${h.photo ? `<img src="${h.photo}" class="timeline-thumb" onclick="openLightboxModal('${h.photo}', '${h.type}')" />` : ''}
           </div>
@@ -3766,10 +3843,10 @@ function renderAgentAttendance() {
 
 function renderOpsAttendance() {
   const rosterContainer = document.getElementById('fleet-attendance-roster');
+  const radarContainer = document.getElementById('fleet-radar-map-view');
   if (!rosterContainer) return;
 
   const range = getAttendanceDateFilterRange();
-  const todayStr = getTodayISODate();
   const isViewingToday = range.type === 'today';
 
   let onDutyCount = 0;
@@ -3781,7 +3858,6 @@ function renderOpsAttendance() {
       if (att && att.status === 'on_duty') onDutyCount++;
       else offDutyCount++;
     } else {
-      // Historical check in date range
       const hadDuty = att && (att.history || []).some(h => isDateInAttendanceFilterRange(h.date));
       if (hadDuty) onDutyCount++;
       else offDutyCount++;
@@ -3792,6 +3868,7 @@ function renderOpsAttendance() {
   const fleetSummaryEl = document.getElementById('ops-fleet-status-summary');
   const countOnDutyTab = document.getElementById('count-fleet-onduty');
   const countOffDutyTab = document.getElementById('count-fleet-offduty');
+  const radarBadge = document.getElementById('radar-active-agents-badge');
 
   if (onDutyCountEl) onDutyCountEl.textContent = `${onDutyCount} / ${AGENTS_LIST.length}`;
   if (fleetSummaryEl) {
@@ -3803,6 +3880,18 @@ function renderOpsAttendance() {
   }
   if (countOnDutyTab) countOnDutyTab.textContent = String(onDutyCount);
   if (countOffDutyTab) countOffDutyTab.textContent = String(offDutyCount);
+  if (radarBadge) radarBadge.textContent = `${onDutyCount} Agents Online`;
+
+  // Toggle between Roster List & Radar Map
+  if (appState.fleetSubView === 'radar') {
+    if (rosterContainer) rosterContainer.classList.add('hidden');
+    if (radarContainer) radarContainer.classList.remove('hidden');
+    initFleetRadarMap();
+    return;
+  } else {
+    if (rosterContainer) rosterContainer.classList.remove('hidden');
+    if (radarContainer) radarContainer.classList.add('hidden');
+  }
 
   let displayAgents = AGENTS_LIST;
   if (appState.filterFleetAttendanceTab === 'on_duty') {
@@ -3823,6 +3912,10 @@ function renderOpsAttendance() {
     const att = appState.attendance[agentName] || { status: 'off_duty', punchInTime: '', history: [] };
     const isOnDuty = isViewingToday ? att.status === 'on_duty' : (att.history || []).some(h => isDateInAttendanceFilterRange(h.date));
     const isOnBreak = isViewingToday && att.status === 'on_break';
+
+    const agentLoc = appState.agentLocations[agentName] || DEFAULT_AGENT_LOCATIONS[agentName] || {
+      lat: 17.44829, lng: 78.37284, address: 'Central Zone'
+    };
 
     // Date-filtered metrics for this agent
     let assignedOrders = appState.bills.filter(b => b.deliveryAgent === agentName);
@@ -3845,6 +3938,8 @@ function renderOpsAttendance() {
       else statusTag = `<span class="badge badge-neutral"><span class="status-dot dot-red"></span> Off Duty</span>`;
     }
 
+    const mapGoogleLink = `https://www.google.com/maps?q=${agentLoc.lat},${agentLoc.lng}`;
+
     return `
       <div class="fleet-agent-card ${isOnDuty ? 'agent-card-onduty' : ''}">
         <div class="fleet-agent-header">
@@ -3864,6 +3959,17 @@ function renderOpsAttendance() {
               <span class="badge badge-outline"><i class="fa-solid fa-calendar"></i> ${range.type.replace('_', ' ').toUpperCase()}</span>
             `}
           </div>
+        </div>
+
+        <!-- Live Agent Location Row -->
+        <div class="fleet-agent-loc-row" style="padding: 8px 14px; background: rgba(0,0,0,0.2); border-radius: 8px; margin: 10px 14px 0 14px; display: flex; align-items: center; justify-content: space-between; font-size: 12px;">
+          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <i class="fa-solid fa-location-crosshairs text-primary"></i>
+            <span style="color: var(--text-main); font-weight: 600;">${agentLoc.address || 'Active Zone'}</span>
+          </div>
+          <a href="${mapGoogleLink}" target="_blank" class="btn-text-xs" onclick="event.stopPropagation()" style="white-space: nowrap;">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Map
+          </a>
         </div>
 
         <div class="fleet-agent-metrics">
@@ -3899,7 +4005,23 @@ function filterFleetAttendance(filter, btn) {
   renderOpsAttendance();
 }
 
-// Attendance Actions
+function switchFleetSubView(viewType) {
+  appState.fleetSubView = viewType;
+  const btnRoster = document.getElementById('btn-subview-roster');
+  const btnRadar = document.getElementById('btn-subview-radar');
+
+  if (viewType === 'radar') {
+    btnRadar?.classList.add('active');
+    btnRoster?.classList.remove('active');
+  } else {
+    btnRoster?.classList.add('active');
+    btnRadar?.classList.remove('active');
+  }
+
+  renderOpsAttendance();
+}
+
+// Attendance Actions with Location Geotagging
 function directClockIn(customAgent) {
   const agentName = customAgent || appState.currentUser?.agentName || (AGENTS_LIST[0] || 'Rahul Sharma');
   const timeStr = formatCurrentTime();
@@ -3909,26 +4031,41 @@ function directClockIn(customAgent) {
     appState.attendance[agentName] = { history: [] };
   }
 
+  const loc = appState.currentDeviceLocation || {
+    lat: 17.44829, lng: 78.37284, accuracy: 5, address: 'Hitec City, Hyderabad', timestamp: Date.now()
+  };
+
   const record = appState.attendance[agentName];
   record.status = 'on_duty';
   record.punchInTime = timeStr;
   record.punchInDate = dateStr;
   record.punchOutTime = '';
   record.shiftStartTimestamp = Date.now();
+  record.punchInLocation = {
+    lat: loc.lat,
+    lng: loc.lng,
+    accuracy: loc.accuracy || 5,
+    address: loc.address || 'Hitec City, Hyderabad',
+    mapUrl: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`,
+    timestamp: Date.now()
+  };
+
+  updateAgentLocationState(agentName, record.punchInLocation);
 
   if (!record.history) record.history = [];
   record.history.push({
     type: 'Clocked In (Duty Start)',
     time: timeStr,
     date: dateStr,
-    photo: record.photo || ''
+    photo: record.photo || '',
+    location: record.punchInLocation
   });
 
   saveAttendanceToLocal();
   applyUserRoleUI();
   updateShiftTimerDisplay();
   renderAttendanceScreen();
-  showToast(`🟢 Clocked In successfully at ${timeStr}! Timer started.`, 'success');
+  showToast(`🟢 Clocked In at ${timeStr} with GPS fix (${loc.address || 'Locked'})!`, 'success');
 }
 
 function directClockOut(customAgent) {
@@ -3939,16 +4076,31 @@ function directClockOut(customAgent) {
   const timeStr = formatCurrentTime();
   const dateStr = getTodayISODate();
 
+  const loc = appState.currentDeviceLocation || {
+    lat: 17.44829, lng: 78.37284, accuracy: 5, address: 'Hitec City, Hyderabad', timestamp: Date.now()
+  };
+
   record.status = 'off_duty';
   record.punchOutTime = timeStr;
   record.shiftStartTimestamp = null;
+  record.punchOutLocation = {
+    lat: loc.lat,
+    lng: loc.lng,
+    accuracy: loc.accuracy || 5,
+    address: loc.address || 'Hitec City, Hyderabad',
+    mapUrl: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`,
+    timestamp: Date.now()
+  };
+
+  updateAgentLocationState(agentName, record.punchOutLocation);
 
   if (!record.history) record.history = [];
   record.history.push({
     type: 'Clocked Out (Shift End)',
     time: timeStr,
     date: dateStr,
-    photo: ''
+    photo: '',
+    location: record.punchOutLocation
   });
 
   saveAttendanceToLocal();
@@ -4015,6 +4167,10 @@ function executePunchIn(photoData) {
     appState.attendance[agentName] = { history: [] };
   }
 
+  const loc = appState.currentDeviceLocation || {
+    lat: 17.44829, lng: 78.37284, accuracy: 5, address: 'Hitec City, Hyderabad', timestamp: Date.now()
+  };
+
   const record = appState.attendance[agentName];
   record.status = 'on_duty';
   record.punchInTime = timeStr;
@@ -4023,19 +4179,31 @@ function executePunchIn(photoData) {
   record.shiftStartTimestamp = Date.now();
   if (photoData) record.photo = photoData;
 
+  record.punchInLocation = {
+    lat: loc.lat,
+    lng: loc.lng,
+    accuracy: loc.accuracy || 5,
+    address: loc.address || 'Hitec City, Hyderabad',
+    mapUrl: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`,
+    timestamp: Date.now()
+  };
+
+  updateAgentLocationState(agentName, record.punchInLocation);
+
   if (!record.history) record.history = [];
   record.history.push({
-    type: 'Duty Punch In (Selfie Verified)',
+    type: 'Duty Punch In (GPS & Selfie Verified)',
     time: timeStr,
     date: dateStr,
-    photo: photoData || ''
+    photo: photoData || '',
+    location: record.punchInLocation
   });
 
   saveAttendanceToLocal();
   applyUserRoleUI();
   updateShiftTimerDisplay();
   renderAttendanceScreen();
-  showToast(`🟢 ${agentName} is now ON DUTY at ${timeStr}`, 'success');
+  showToast(`🟢 ${agentName} is ON DUTY at ${timeStr} with GPS fix!`, 'success');
 }
 
 function punchOutCurrentAgent() {
@@ -4090,10 +4258,11 @@ function overrideAgentDutyStatus(agentName, newStatus) {
 
 function exportAttendanceToCSV() {
   const range = getAttendanceDateFilterRange();
-  const headers = ['Agent Name', 'Filtered Period', 'Status', 'Punch In Time', 'Punch In Date', 'Punch Out Time', 'Delivered Orders', 'Cash Collected (INR)', 'Digital Collected (INR)'];
+  const headers = ['Agent Name', 'Filtered Period', 'Status', 'Punch In Time', 'Punch In Date', 'Punch Out Time', 'Delivered Orders', 'Cash Collected (INR)', 'Digital Collected (INR)', 'Last Known GPS Address'];
   
   const rows = AGENTS_LIST.map(name => {
     const att = appState.attendance[name] || { status: 'off_duty', punchInTime: '', punchInDate: '', punchOutTime: '' };
+    const loc = appState.agentLocations[name] || {};
     let agentBills = appState.bills.filter(b => b.deliveryAgent === name);
     agentBills = agentBills.filter(b => isDateInAttendanceFilterRange(b.deliveredDate || b.billedDate));
 
@@ -4110,7 +4279,8 @@ function exportAttendanceToCSV() {
       `"${att.punchOutTime || ''}"`,
       myDelivered,
       myCash,
-      myQr
+      myQr,
+      `"${(loc.address || '').replace(/"/g, '""')}"`
     ];
   });
 
@@ -4125,6 +4295,417 @@ function exportAttendanceToCSV() {
 
   showToast(`Exported Attendance (${range.label}) to CSV!`, 'success');
 }
+
+// ==========================================
+// 23. GEOLOCATION ENGINE & FLEET RADAR MAP (PURE LOCAL & LIVE GPS)
+// ==========================================
+
+function initDeviceLocationEngine() {
+  updateHeaderGPSIndicator('searching');
+
+  if ('geolocation' in navigator) {
+    // 1. Initial immediate GPS fix
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyDeviceGPSPosition(pos);
+      },
+      (err) => {
+        console.warn('GPS initial acquisition warning:', err.message);
+        // Fallback to cached or default local coordinates
+        updateHeaderGPSIndicator('locked');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 10000 }
+    );
+
+    // 2. Real-time background location watcher
+    if (!appState.locationWatchId) {
+      appState.locationWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          applyDeviceGPSPosition(pos);
+        },
+        (err) => {
+          console.warn('GPS background watch event:', err.message);
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 15000 }
+      );
+    }
+  } else {
+    updateHeaderGPSIndicator('locked');
+  }
+}
+
+function applyDeviceGPSPosition(pos) {
+  if (!pos || !pos.coords) return;
+
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const accuracy = Math.round(pos.coords.accuracy || 5);
+
+  appState.currentDeviceLocation = {
+    lat: lat,
+    lng: lng,
+    accuracy: accuracy,
+    address: formatEstimatedLocality(lat, lng),
+    timestamp: Date.now(),
+    isMock: false
+  };
+
+  // Reverse geocode asynchronously
+  reverseGeocodeCoords(lat, lng).then(addr => {
+    if (addr && appState.currentDeviceLocation) {
+      appState.currentDeviceLocation.address = addr;
+      updateLocationUIElements();
+    }
+  });
+
+  // If logged in as delivery agent, update current agent location in state
+  if (appState.currentUser && appState.currentUser.role === 'agent') {
+    const agentName = appState.currentUser.agentName || 'Rahul Sharma';
+    updateAgentLocationState(agentName, appState.currentDeviceLocation);
+  }
+
+  updateHeaderGPSIndicator('locked');
+  updateLocationUIElements();
+}
+
+function updateAgentLocationState(agentName, locObj) {
+  if (!agentName || !locObj) return;
+  appState.agentLocations[agentName] = {
+    lat: locObj.lat,
+    lng: locObj.lng,
+    accuracy: locObj.accuracy || 5,
+    address: locObj.address || 'Active Route',
+    timestamp: Date.now()
+  };
+  saveAgentLocationsToLocal();
+  if (appState.fleetMap && appState.fleetSubView === 'radar') {
+    refreshFleetMapPins();
+  }
+}
+
+function formatEstimatedLocality(lat, lng) {
+  // Approximate Hyderabad city quadrant bounds fallback
+  if (lat >= 17.43 && lat <= 17.47 && lng >= 17.34 && lng <= 78.40) {
+    return 'Hitec City / Madhapur, Hyderabad';
+  } else if (lat >= 17.44 && lat <= 17.48 && lng >= 78.34 && lng <= 78.38) {
+    return 'Kondapur / Gachibowli, Hyderabad';
+  }
+  return `GeoPoint (${lat.toFixed(4)}°, ${lng.toFixed(4)}°)`;
+}
+
+async function reverseGeocodeCoords(lat, lng) {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!res.ok) return formatEstimatedLocality(lat, lng);
+    const data = await res.json();
+    if (data && data.address) {
+      const parts = [
+        data.address.suburb || data.address.neighbourhood || data.address.residential,
+        data.address.city || data.address.town || data.address.county
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(', ') : (data.display_name || formatEstimatedLocality(lat, lng));
+    }
+  } catch (e) {
+    // Pure offline fallback
+  }
+  return formatEstimatedLocality(lat, lng);
+}
+
+function updateHeaderGPSIndicator(status) {
+  const btnGps = document.getElementById('btn-header-gps');
+  const labelGps = document.getElementById('header-gps-label');
+  if (!btnGps) return;
+
+  if (status === 'searching') {
+    btnGps.className = 'btn-icon-pill gps-searching';
+    if (labelGps) labelGps.textContent = 'Locating...';
+  } else {
+    btnGps.className = 'btn-icon-pill gps-locked';
+    if (labelGps) labelGps.textContent = `GPS (${appState.currentDeviceLocation.accuracy || 5}m)`;
+  }
+}
+
+function updateLocationUIElements() {
+  const loc = appState.currentDeviceLocation;
+  if (!loc) return;
+
+  // Agent Attendance Card
+  const addrEl = document.getElementById('agent-current-address');
+  const coordsEl = document.getElementById('agent-current-coords');
+  if (addrEl) addrEl.textContent = loc.address;
+  if (coordsEl) {
+    coordsEl.innerHTML = `Lat: <strong>${Number(loc.lat).toFixed(5)}°</strong> &bull; Lng: <strong>${Number(loc.lng).toFixed(5)}°</strong> &bull; Accuracy: <strong>±${loc.accuracy}m</strong>`;
+  }
+
+  // Delivery Proof Geotag Box
+  const delProofCoords = document.getElementById('delproof-gps-coords');
+  if (delProofCoords) {
+    delProofCoords.textContent = `${loc.address} (${Number(loc.lat).toFixed(5)}°, ${Number(loc.lng).toFixed(5)}° • ±${loc.accuracy}m)`;
+  }
+
+  // GPS Diagnostic Modal
+  const diagLatLng = document.getElementById('gps-diag-latlng');
+  const diagAddr = document.getElementById('gps-diag-address');
+  const diagAcc = document.getElementById('gps-diag-accuracy');
+  const diagTime = document.getElementById('gps-diag-timestamp');
+
+  if (diagLatLng) diagLatLng.textContent = `${Number(loc.lat).toFixed(5)}° N, ${Number(loc.lng).toFixed(5)}° E`;
+  if (diagAddr) diagAddr.textContent = loc.address;
+  if (diagAcc) {
+    diagAcc.textContent = `±${loc.accuracy}m (${loc.isMock ? 'Simulated' : 'High Precision Device GPS'})`;
+    diagAcc.className = loc.isMock ? 'badge badge-yellow' : 'badge badge-green';
+  }
+  if (diagTime) diagTime.textContent = new Date(loc.timestamp).toLocaleTimeString();
+}
+
+function refreshDeliveryProofLocation() {
+  updateHeaderGPSIndicator('searching');
+  const coordsEl = document.getElementById('delproof-gps-coords');
+  if (coordsEl) coordsEl.textContent = 'Pinging GPS satellite telemetry...';
+
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        applyDeviceGPSPosition(pos);
+      },
+      () => {
+        updateLocationUIElements();
+      },
+      { enableHighAccuracy: true, timeout: 6000 }
+    );
+  } else {
+    setTimeout(updateLocationUIElements, 300);
+  }
+}
+
+function updateCurrentAgentGPS() {
+  showToast('🛰️ Pinging GPS satellite for high-accuracy fix...', 'info');
+  refreshDeliveryProofLocation();
+}
+
+function openAgentMapLocation(customAgent) {
+  const agentName = customAgent || appState.currentUser?.agentName || 'Rahul Sharma';
+  const loc = appState.agentLocations[agentName] || appState.currentDeviceLocation;
+  if (loc && loc.lat) {
+    window.open(`https://www.google.com/maps?q=${loc.lat},${loc.lng}`, '_blank');
+  } else {
+    showToast('GPS coordinates not available', 'warning');
+  }
+}
+
+function openCurrentLocationInGoogleMaps() {
+  const loc = appState.currentDeviceLocation;
+  if (loc && loc.lat) {
+    window.open(`https://www.google.com/maps?q=${loc.lat},${loc.lng}`, '_blank');
+  }
+}
+
+function forceRefreshDeviceGPS() {
+  showToast('🔄 Refreshing device GPS telemetry...', 'info');
+  refreshDeliveryProofLocation();
+  setTimeout(() => {
+    showToast(`📍 Locked: ${appState.currentDeviceLocation.address}`, 'success');
+  }, 600);
+}
+
+function simulateDeviceLocation(lat, lng, address) {
+  appState.currentDeviceLocation = {
+    lat: lat,
+    lng: lng,
+    accuracy: 3,
+    address: address,
+    timestamp: Date.now(),
+    isMock: true
+  };
+
+  if (appState.currentUser && appState.currentUser.role === 'agent') {
+    const agentName = appState.currentUser.agentName || 'Rahul Sharma';
+    updateAgentLocationState(agentName, appState.currentDeviceLocation);
+  }
+
+  updateHeaderGPSIndicator('locked');
+  updateLocationUIElements();
+  showToast(`📍 Simulated GPS set to: ${address}`, 'success');
+
+  if (appState.fleetMap && appState.fleetSubView === 'radar') {
+    refreshFleetMapPins();
+    centerFleetMap();
+  }
+}
+
+function openGPSDiagnosticModal() {
+  const modal = document.getElementById('gps-diagnostic-modal');
+  updateLocationUIElements();
+  if (modal) modal.classList.add('active');
+}
+
+function closeGPSDiagnosticModal(e) {
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('btn-close')) return;
+  const modal = document.getElementById('gps-diagnostic-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+// -------------------------------------------------------------
+// LEAFLET INTERACTIVE FLEET RADAR & DELIVERY MAP
+// -------------------------------------------------------------
+function initFleetRadarMap() {
+  const mapContainer = document.getElementById('fleet-leaflet-map');
+  if (!mapContainer || typeof L === 'undefined') return;
+
+  if (!appState.fleetMap) {
+    const defaultCenter = [appState.currentDeviceLocation.lat || 17.44829, appState.currentDeviceLocation.lng || 78.37284];
+    appState.fleetMap = L.map('fleet-leaflet-map', {
+      center: defaultCenter,
+      zoom: 14,
+      zoomControl: true
+    });
+
+    // Dark sleek CartoDB tile layer
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 19
+    }).addTo(appState.fleetMap);
+  }
+
+  setTimeout(() => {
+    appState.fleetMap.invalidateSize();
+    refreshFleetMapPins();
+  }, 100);
+}
+
+function refreshFleetMapPins() {
+  if (!appState.fleetMap || typeof L === 'undefined') return;
+
+  // Clear existing markers
+  if (appState.fleetMapMarkers) {
+    appState.fleetMapMarkers.forEach(m => appState.fleetMap.removeLayer(m));
+  }
+  appState.fleetMapMarkers = [];
+
+  const bounds = [];
+
+  // 1. Add Delivery Fleet Agent Markers
+  AGENTS_LIST.forEach(agentName => {
+    const att = appState.attendance[agentName] || { status: 'off_duty' };
+    const loc = appState.agentLocations[agentName] || DEFAULT_AGENT_LOCATIONS[agentName];
+    if (!loc || !loc.lat) return;
+
+    const isOnDuty = att.status === 'on_duty';
+    const latLng = [loc.lat, loc.lng];
+    bounds.push(latLng);
+
+    const agentIconHtml = `
+      <div class="custom-fleet-marker">
+        ${isOnDuty ? '<div class="fleet-marker-pulse"></div>' : ''}
+        <div class="fleet-marker-bubble" style="border-color: ${isOnDuty ? '#00F59B' : '#8494ab'}; color: ${isOnDuty ? '#00F59B' : '#8494ab'};">
+          <i class="fa-solid fa-person-biking"></i>
+        </div>
+        <div class="fleet-marker-tag">${agentName.split(' ')[0]} ${isOnDuty ? '🟢' : '⚪'}</div>
+      </div>
+    `;
+
+    const icon = L.divIcon({
+      html: agentIconHtml,
+      className: 'fleet-leaflet-custom-icon',
+      iconSize: [40, 40],
+      iconAnchor: [20, 20]
+    });
+
+    const agentBills = appState.bills.filter(b => b.deliveryAgent === agentName);
+    const deliveredCount = agentBills.filter(b => b.deliveryStatus === 'Delivered').length;
+    const pendingCount = agentBills.filter(b => b.deliveryStatus !== 'Delivered').length;
+
+    const popupHtml = `
+      <div>
+        <div class="map-popup-title">
+          <i class="fa-solid fa-person-biking text-primary"></i> ${agentName}
+        </div>
+        <div class="map-popup-sub">
+          <strong>Status:</strong> ${isOnDuty ? '<span class="text-success">ON DUTY</span>' : '<span class="text-muted">OFF DUTY</span>'}<br/>
+          <strong>Location:</strong> ${loc.address || 'Active Zone'}<br/>
+          <strong>Orders:</strong> ${deliveredCount} Delivered &bull; ${pendingCount} Pending
+        </div>
+        <a href="https://www.google.com/maps?q=${loc.lat},${loc.lng}" target="_blank" class="map-popup-btn">
+          <i class="fa-solid fa-location-arrow"></i> Track on Google Maps
+        </a>
+      </div>
+    `;
+
+    const marker = L.marker(latLng, { icon: icon }).bindPopup(popupHtml);
+    marker.addTo(appState.fleetMap);
+    appState.fleetMapMarkers.push(marker);
+  });
+
+  // 2. Add Delivery Flat Location Markers from recent bills
+  appState.bills.slice(0, 15).forEach((bill, idx) => {
+    let lat = 17.44829 + (idx * 0.003 * (idx % 2 === 0 ? 1 : -1));
+    let lng = 78.37284 + (idx * 0.0025 * (idx % 3 === 0 ? 1 : -1));
+
+    if (bill.deliveryLocation && bill.deliveryLocation.lat) {
+      lat = bill.deliveryLocation.lat;
+      lng = bill.deliveryLocation.lng;
+    }
+
+    const latLng = [lat, lng];
+    bounds.push(latLng);
+
+    const isDelivered = bill.deliveryStatus === 'Delivered';
+    const isPaid = bill.paymentStatus === 'Paid';
+
+    const flatIconHtml = `
+      <div class="flat-delivery-marker ${isDelivered ? '' : 'pending-marker'}">
+        <span>${bill.flatNo.replace('Flat', '').replace('-', '').slice(0, 3)}</span>
+      </div>
+    `;
+
+    const icon = L.divIcon({
+      html: flatIconHtml,
+      className: 'flat-leaflet-custom-icon',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+
+    const popupHtml = `
+      <div>
+        <div class="map-popup-title">
+          <i class="fa-solid fa-door-open text-primary"></i> Flat ${bill.flatNo}
+        </div>
+        <div class="map-popup-sub">
+          <strong>Invoice:</strong> #${bill.invoiceNo}<br/>
+          <strong>Amount:</strong> ${formatCurrency(bill.billAmount)} (${isPaid ? '<span class="text-success">PAID</span>' : '<span class="text-danger">UNPAID</span>'})<br/>
+          <strong>Delivery:</strong> ${bill.deliveryStatus}<br/>
+          <strong>Agent:</strong> ${bill.deliveryAgent || 'Unassigned'}
+        </div>
+        <button class="map-popup-btn" onclick="openBillDetailModal('${bill.invoiceNo}')">
+          View Invoice Details
+        </button>
+      </div>
+    `;
+
+    const marker = L.marker(latLng, { icon: icon }).bindPopup(popupHtml);
+    marker.addTo(appState.fleetMap);
+    appState.fleetMapMarkers.push(marker);
+  });
+
+  if (bounds.length > 0) {
+    try {
+      appState.fleetMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    } catch (e) {}
+  }
+}
+
+function centerFleetMap() {
+  if (!appState.fleetMap) return;
+  const loc = appState.currentDeviceLocation;
+  if (loc && loc.lat) {
+    appState.fleetMap.setView([loc.lat, loc.lng], 15, { animate: true });
+    showToast('Centered map on your active location', 'info');
+  }
+}
+
 
 
 

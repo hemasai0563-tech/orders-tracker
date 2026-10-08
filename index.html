@@ -20,6 +20,10 @@
   <!-- QR Code Generator Library for instant high-res crisp QR codes -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
+  <!-- Leaflet Map Engine for Fleet GPS Radar & Geolocation Pinning -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -156,6 +160,12 @@
         <button id="btn-header-gsheet-view" class="btn-icon-pill" title="Open Google Sheet Live Table View" onclick="openGSheetViewerModal()">
           <i class="fa-solid fa-table-cells text-success"></i>
           <span class="sync-status-text">Sheet</span>
+        </button>
+
+        <!-- Live GPS Radar / Location Status Button -->
+        <button id="btn-header-gps" class="btn-icon-pill" title="Device & Fleet GPS Telemetry" onclick="openGPSDiagnosticModal()">
+          <i class="fa-solid fa-location-crosshairs text-primary" id="header-gps-icon"></i>
+          <span class="sync-status-text" id="header-gps-label">GPS</span>
         </button>
 
         <!-- Agent Live Duty Indicator Pill (Shown for Agents) -->
@@ -652,6 +662,31 @@
             </div>
           </div>
 
+          <!-- Agent Live GPS Location Status Card -->
+          <div class="attendance-location-card" id="agent-location-card">
+            <div class="location-card-header">
+              <span><i class="fa-solid fa-location-crosshairs text-primary"></i> <strong>Fleet GPS Telemetry</strong></span>
+              <span class="badge badge-green" id="agent-gps-badge"><span class="pulse-dot"></span> <span id="agent-gps-badge-text">GPS Locked</span></span>
+            </div>
+            <div class="location-card-body">
+              <div class="location-text-row">
+                <i class="fa-solid fa-map-pin text-primary location-main-pin"></i>
+                <div class="location-details-col">
+                  <div class="location-address-title" id="agent-current-address">Detecting device GPS...</div>
+                  <div class="location-coords-sub" id="agent-current-coords">Lat: -- &bull; Lng: -- &bull; Accuracy: --</div>
+                </div>
+              </div>
+              <div class="location-actions-row mt-2">
+                <button type="button" class="btn btn-sm btn-outline" onclick="openAgentMapLocation()">
+                  <i class="fa-solid fa-map-location-dot"></i> View on Google Maps
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="updateCurrentAgentGPS()">
+                  <i class="fa-solid fa-arrows-rotate"></i> Ping / Update Location
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Shift Earnings & Delivery Summary -->
           <div class="shift-summary-grid">
             <div class="shift-stat-box">
@@ -687,7 +722,7 @@
 
           <!-- Today's Attendance Activity Log -->
           <div class="section-subhead mt-3">
-            <h3><i class="fa-solid fa-timeline"></i> Today's Shift Logs</h3>
+            <h3><i class="fa-solid fa-timeline"></i> Today's Shift Logs & GPS Coordinates</h3>
             <span class="badge badge-neutral" id="agent-punch-log-count">1 entry</span>
           </div>
           <div class="attendance-timeline" id="agent-attendance-timeline">
@@ -715,18 +750,51 @@
 
           <div class="attendance-fleet-toolbar">
             <div class="fleet-filter-pills">
-              <button class="chip active" onclick="filterFleetAttendance('all', this)">All (4)</button>
+              <button class="chip active" onclick="filterFleetAttendance('all', this)">All</button>
               <button class="chip" onclick="filterFleetAttendance('on_duty', this)"><span class="status-dot dot-green"></span> On Duty (<span id="count-fleet-onduty">3</span>)</button>
               <button class="chip" onclick="filterFleetAttendance('off_duty', this)"><span class="status-dot dot-red"></span> Off Duty (<span id="count-fleet-offduty">1</span>)</button>
             </div>
-            <button class="btn-text-xs" onclick="exportAttendanceToCSV()">
-              <i class="fa-solid fa-file-excel text-success"></i> Export CSV
-            </button>
+            <div class="fleet-view-toggle-wrap">
+              <button class="btn-toggle-subview active" id="btn-subview-roster" onclick="switchFleetSubView('roster')">
+                <i class="fa-solid fa-list-ul"></i> Roster
+              </button>
+              <button class="btn-toggle-subview" id="btn-subview-radar" onclick="switchFleetSubView('radar')">
+                <i class="fa-solid fa-map-location-dot text-primary"></i> Live Fleet Map
+              </button>
+              <button class="btn-text-xs" onclick="exportAttendanceToCSV()">
+                <i class="fa-solid fa-file-excel text-success"></i> CSV
+              </button>
+            </div>
           </div>
 
-          <!-- Fleet Agents Roster List -->
+          <!-- Fleet Agents Roster List View -->
           <div id="fleet-attendance-roster" class="fleet-roster-list">
             <!-- Rendered dynamically via JS -->
+          </div>
+
+          <!-- Live Fleet GPS Radar Map View -->
+          <div id="fleet-radar-map-view" class="fleet-radar-container hidden">
+            <div class="radar-map-header">
+              <div class="radar-map-title">
+                <span class="pulse-dot"></span>
+                <strong>Live Fleet GPS Radar & Delivery Map</strong>
+                <span class="badge badge-green" id="radar-active-agents-badge">3 Agents Online</span>
+              </div>
+              <div class="radar-map-controls">
+                <button class="btn btn-sm btn-outline" onclick="centerFleetMap()" title="Recenter map">
+                  <i class="fa-solid fa-crosshairs"></i> Recenter
+                </button>
+                <button class="btn btn-sm btn-primary" onclick="refreshFleetMapPins()" title="Refresh live GPS locations">
+                  <i class="fa-solid fa-arrows-rotate"></i> Refresh Map
+                </button>
+              </div>
+            </div>
+            <div id="fleet-leaflet-map" class="fleet-leaflet-map"></div>
+            <div class="radar-legend-bar">
+              <span class="legend-item"><span class="legend-dot dot-agent"></span> Delivery Fleet</span>
+              <span class="legend-item"><span class="legend-dot dot-delivered"></span> Delivered Flat</span>
+              <span class="legend-item"><span class="legend-dot dot-pending"></span> Pending Drop</span>
+            </div>
           </div>
         </div>
       </section>
@@ -1047,23 +1115,18 @@
             <span class="sheet-subhead" id="modal-bill-flat" onclick="viewAllInvoicesForCurrentFlat()" style="cursor: pointer;" title="Click to view all pending for this flat">
               Flat A-101 <i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>
             </span>
-            <h3 id="modal-bill-invoice">INV-2026-001</h3>
+            <div class="modal-invoice-title-row">
+              <h3 id="modal-bill-invoice" style="margin: 0;">INV-2026-001</h3>
+              <div class="modal-inline-status-toggle">
+                <span id="modal-delivery-badge"></span>
+                <span id="modal-payment-badge"></span>
+              </div>
+            </div>
           </div>
           <button class="btn-close-circle" onclick="closeBillDetailModal()">&times;</button>
         </div>
 
         <div class="sheet-body">
-          <!-- Status Badges Bar -->
-          <div class="modal-status-bar">
-            <div class="status-pill-group">
-              <span class="label-tiny">Delivery Status</span>
-              <div id="modal-delivery-badge" class="badge badge-status">Pending</div>
-            </div>
-            <div class="status-pill-group">
-              <span class="label-tiny">Payment Status & Mode</span>
-              <div id="modal-payment-badge" class="badge badge-status">Unpaid</div>
-            </div>
-          </div>
 
           <!-- Assigned Delivery Agent Bar -->
           <div class="modal-agent-assign-box">
@@ -1096,31 +1159,6 @@
             <div class="fin-row total-balance-row">
               <span class="fin-label">Payment Status:</span>
               <span class="fin-value" id="modal-balance-amount">₹0.00 (Unpaid)</span>
-            </div>
-          </div>
-
-          <!-- Delivery & Payment Proofs Section in Bill Detail -->
-          <div class="modal-proofs-section" id="modal-proofs-section">
-            <h5 class="proofs-heading"><i class="fa-solid fa-shield-check text-success"></i> Verified Proof Attachments</h5>
-            
-            <div class="proofs-cards-grid">
-              <!-- Delivery Proof Card -->
-              <div class="proof-card-preview" id="preview-delivery-proof-box">
-                <span class="proof-type-label"><i class="fa-solid fa-truck-ramp-box"></i> Delivery Proof</span>
-                <div id="detail-delivery-proof-thumb" class="proof-thumb-wrap">
-                  <span class="no-proof-text"><i class="fa-solid fa-camera"></i> No proof uploaded yet</span>
-                </div>
-                <small id="detail-delivery-proof-time" class="proof-meta-time">-</small>
-              </div>
-
-              <!-- Payment Proof Card -->
-              <div class="proof-card-preview" id="preview-payment-proof-box">
-                <span class="proof-type-label"><i class="fa-solid fa-receipt"></i> Payment Proof</span>
-                <div id="detail-payment-proof-thumb" class="proof-thumb-wrap">
-                  <span class="no-proof-text"><i class="fa-solid fa-receipt"></i> No proof uploaded yet</span>
-                </div>
-                <small id="detail-payment-proof-time" class="proof-meta-time">-</small>
-              </div>
             </div>
           </div>
 
@@ -1246,10 +1284,24 @@
             <input type="text" id="input-delproof-note" placeholder="e.g. Handed to security / left at door" />
           </div>
 
+          <!-- GPS Location Geotag Status Pill in Delivery Proof -->
+          <div class="delivery-gps-status-box mt-3" id="delproof-gps-status-wrap">
+            <div class="gps-pulse-icon">
+              <span class="pulse-dot"></span>
+            </div>
+            <div class="gps-status-info">
+              <strong id="delproof-gps-title"><i class="fa-solid fa-location-crosshairs text-success"></i> GPS Geotag Locked</strong>
+              <span id="delproof-gps-coords" class="gps-coords-text">Acquiring device GPS fix...</span>
+            </div>
+            <button type="button" class="btn-text-xs" onclick="refreshDeliveryProofLocation()">
+              <i class="fa-solid fa-arrows-rotate"></i> Ping GPS
+            </button>
+          </div>
+
           <div class="modal-actions-grid mt-4">
             <button type="button" class="btn btn-outline" onclick="closeDeliveryProofModal()">Cancel</button>
             <button type="submit" class="btn btn-success btn-lg" id="btn-submit-delivery-proof">
-              <i class="fa-solid fa-circle-check"></i> Confirm & Deliver
+              <i class="fa-solid fa-circle-check"></i> Confirm Delivery & Collect Payment
             </button>
           </div>
         </form>
@@ -1371,36 +1423,6 @@
               </div>
             </div>
 
-            <!-- ==================== MANDATORY PAYMENT PROOF SECTION (Requirement 2) ==================== -->
-            <div id="payment-proof-capture-section" class="form-group mt-3">
-              <label for="input-payment-proof-file">
-                <span><i class="fa-solid fa-camera text-success"></i> Payment Proof <span class="text-danger">* Mandatory</span></span>
-                <small class="text-muted">Screenshot / Receipt / Cash photo</small>
-              </label>
-
-              <input 
-                type="file" 
-                id="input-payment-proof-file" 
-                accept="image/*" 
-                capture="environment" 
-                style="display: none;" 
-                onchange="handleProofImageSelected(event, 'payment')"
-              />
-
-              <div class="proof-dropzone proof-dropzone-pay" id="payproof-dropzone" onclick="document.getElementById('input-payment-proof-file').click()">
-                <div id="payproof-empty-placeholder" class="dropzone-placeholder">
-                  <i class="fa-solid fa-camera camera-big-icon text-success"></i>
-                  <strong>Attach UPI Screenshot / Cash Receipt Photo</strong>
-                  <span class="btn btn-sm btn-outline mt-2"><i class="fa-solid fa-cloud-arrow-up"></i> Upload / Capture Proof</span>
-                </div>
-                <div id="payproof-preview-wrapper" class="dropzone-preview-wrap hidden">
-                  <img id="payproof-preview-img" src="" alt="Payment Proof Preview" />
-                  <button type="button" class="btn-retake" onclick="document.getElementById('input-payment-proof-file').click()">
-                    <i class="fa-solid fa-arrows-rotate"></i> Change Photo
-                  </button>
-                </div>
-              </div>
-            </div>
 
             <div class="modal-actions-grid mt-4">
               <button type="button" class="btn btn-outline" onclick="closePaymentModeModal()">Cancel</button>
@@ -1755,6 +1777,58 @@
             </button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- ==================== GPS STATUS & LIVE RADAR DIAGNOSTIC MODAL ==================== -->
+    <div id="gps-diagnostic-modal" class="modal-overlay" onclick="closeGPSDiagnosticModal(event)">
+      <div class="modal-card modal-compact" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-satellite-dish text-primary"></i> GPS & Fleet Telemetry</h3>
+            <small>Live Device Geolocation Telemetry & Tracking</small>
+          </div>
+          <button class="btn-close" onclick="closeGPSDiagnosticModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="gps-diagnostic-card">
+            <div class="gps-metric-row">
+              <span class="gps-metric-label"><i class="fa-solid fa-location-pin text-primary"></i> Coordinates:</span>
+              <strong id="gps-diag-latlng" class="text-primary font-mono">Acquiring GPS...</strong>
+            </div>
+            <div class="gps-metric-row">
+              <span class="gps-metric-label"><i class="fa-solid fa-map-marker-alt text-success"></i> Locality / Zone:</span>
+              <strong id="gps-diag-address">Detecting Area...</strong>
+            </div>
+            <div class="gps-metric-row">
+              <span class="gps-metric-label"><i class="fa-solid fa-bullseye text-warning"></i> Accuracy:</span>
+              <span id="gps-diag-accuracy" class="badge badge-green">±5m (High Precision)</span>
+            </div>
+            <div class="gps-metric-row">
+              <span class="gps-metric-label"><i class="fa-solid fa-clock text-muted"></i> Last Fix:</span>
+              <span id="gps-diag-timestamp" class="text-muted">Just now</span>
+            </div>
+          </div>
+
+          <div class="gps-quick-actions-box mt-3">
+            <label class="block-hint mb-1"><i class="fa-solid fa-bolt text-warning"></i> Quick Simulator / Testing Locality (for Desktop testing):</label>
+            <div class="simulator-pills-row">
+              <button type="button" class="btn-sim-pill" onclick="simulateDeviceLocation(17.44829, 78.37284, 'Hitec City, Phase 2, Hyderabad')">Hitec City</button>
+              <button type="button" class="btn-sim-pill" onclick="simulateDeviceLocation(17.46124, 78.36195, 'Kondapur Main Rd, Hyderabad')">Kondapur</button>
+              <button type="button" class="btn-sim-pill" onclick="simulateDeviceLocation(17.43992, 78.34891, 'Gachibowli Financial Dist, Hyderabad')">Gachibowli</button>
+              <button type="button" class="btn-sim-pill" onclick="simulateDeviceLocation(17.43005, 78.40798, 'Jubilee Hills Road 36, Hyderabad')">Jubilee Hills</button>
+            </div>
+          </div>
+
+          <div class="modal-actions-grid mt-3">
+            <button type="button" class="btn btn-outline" onclick="openCurrentLocationInGoogleMaps()">
+              <i class="fa-solid fa-map-location-dot"></i> Open in Google Maps
+            </button>
+            <button type="button" class="btn btn-primary" onclick="forceRefreshDeviceGPS()">
+              <i class="fa-solid fa-arrows-rotate"></i> Ping / Refresh GPS
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
