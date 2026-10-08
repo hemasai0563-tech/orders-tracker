@@ -1054,11 +1054,12 @@ function updateBadgeCounts() {
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
   const agentName = appState.currentUser?.agentName;
 
-  let pendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered');
+  // Pending deliveries = bills that are NOT Delivered AND NOT Paid
+  let pendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && b.paymentStatus !== 'Paid');
   let unpaidBills = appState.bills.filter(b => b.paymentStatus !== 'Paid');
 
   if (isAgent && agentName) {
-    pendingBills = pendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+    pendingBills = pendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
     unpaidBills = unpaidBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
   }
 
@@ -1302,7 +1303,7 @@ function renderPendingDeliveries() {
   const agentName = appState.currentUser?.agentName;
 
   // All pending bills across the store
-  const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered');
+  const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && b.paymentStatus !== 'Paid');
   allStorePendingBills.sort((a, b) => new Date(a.billedDate) - new Date(b.billedDate));
 
   let pendingBills = allStorePendingBills;
@@ -2017,7 +2018,6 @@ function renderSingleBillCardHtml(bill) {
         ${payBadge}
         ${agentBadge}
         ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
-        ${bill.deliveryLocation && bill.deliveryLocation.lat ? `<span class="badge badge-cyan" onclick="event.stopPropagation(); window.open('${bill.deliveryLocation.mapUrl || `https://www.google.com/maps?q=${bill.deliveryLocation.lat},${bill.deliveryLocation.lng}`}', '_blank');" title="GPS: ${bill.deliveryLocation.address || 'Delivered'}"><i class="fa-solid fa-location-dot"></i> GPS Geotag</span>` : ''}
       </div>
 
       <div class="card-meta-row">
@@ -2113,7 +2113,6 @@ function renderBillCardWithQuickActions(bill, context) {
         ${payBadge}
         ${agentBadge}
         ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
-        ${bill.deliveryLocation && bill.deliveryLocation.lat ? `<span class="badge badge-cyan" onclick="event.stopPropagation(); window.open('${bill.deliveryLocation.mapUrl || `https://www.google.com/maps?q=${bill.deliveryLocation.lat},${bill.deliveryLocation.lng}`}', '_blank');" title="GPS: ${bill.deliveryLocation.address || 'Delivered'}"><i class="fa-solid fa-location-dot"></i> GPS Geotag</span>` : ''}
       </div>
 
       <div class="card-meta-row">
@@ -2369,9 +2368,6 @@ function quickOpenDeliveryProofModal(invoiceNo) {
   const modal = document.getElementById('delivery-proof-modal');
   if (modal) modal.classList.add('active');
 
-  // Trigger instant GPS telemetry update for delivery modal
-  refreshDeliveryProofLocation();
-
   // Automatically prompt camera / image picker after a smooth brief delay
   setTimeout(() => {
     const fileEl = document.getElementById('input-delivery-proof-file');
@@ -2434,32 +2430,11 @@ function handleDeliveryProofSubmit(event) {
   const notes = document.getElementById('input-delproof-note')?.value.trim();
   const timestamp = new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
 
-  // Capture GPS Geotag coordinates at exact moment of delivery
-  const loc = appState.currentDeviceLocation || {
-    lat: 17.44829,
-    lng: 78.37284,
-    accuracy: 5,
-    address: 'Hitec City, Hyderabad',
-    timestamp: Date.now()
-  };
-
   bill.deliveryStatus = 'Delivered';
   bill.deliveredDate = getTodayISODate();
   bill.deliveryProof = appState.tempDeliveryProofData;
   bill.deliveryProofTime = `${timestamp}${notes ? ` (${notes})` : ''}`;
-  bill.deliveryLocation = {
-    lat: loc.lat,
-    lng: loc.lng,
-    accuracy: loc.accuracy || 5,
-    address: loc.address || `Flat ${bill.flatNo} Drop Point`,
-    mapUrl: `https://www.google.com/maps?q=${loc.lat},${loc.lng}`,
-    timestamp: Date.now()
-  };
-
-  // Also update agent's last known location
-  if (bill.deliveryAgent && bill.deliveryAgent !== 'Unassigned') {
-    updateAgentLocationState(bill.deliveryAgent, bill.deliveryLocation);
-  }
+  bill.lastUpdated = new Date().toISOString();
 
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');

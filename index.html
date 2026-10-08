@@ -1284,20 +1284,6 @@
             <input type="text" id="input-delproof-note" placeholder="e.g. Handed to security / left at door" />
           </div>
 
-          <!-- GPS Location Geotag Status Pill in Delivery Proof -->
-          <div class="delivery-gps-status-box mt-3" id="delproof-gps-status-wrap">
-            <div class="gps-pulse-icon">
-              <span class="pulse-dot"></span>
-            </div>
-            <div class="gps-status-info">
-              <strong id="delproof-gps-title"><i class="fa-solid fa-location-crosshairs text-success"></i> GPS Geotag Locked</strong>
-              <span id="delproof-gps-coords" class="gps-coords-text">Acquiring device GPS fix...</span>
-            </div>
-            <button type="button" class="btn-text-xs" onclick="refreshDeliveryProofLocation()">
-              <i class="fa-solid fa-arrows-rotate"></i> Ping GPS
-            </button>
-          </div>
-
           <div class="modal-actions-grid mt-4">
             <button type="button" class="btn btn-outline" onclick="closeDeliveryProofModal()">Cancel</button>
             <button type="submit" class="btn btn-success btn-lg" id="btn-submit-delivery-proof">
