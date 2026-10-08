@@ -2979,6 +2979,9 @@ async function fetchBillsFromCloud(silent = true) {
       if (result.attendance && typeof result.attendance === 'object') {
         mergeCloudAttendance(result.attendance);
       }
+      if (result.locations && typeof result.locations === 'object') {
+        mergeCloudLocations(result.locations);
+      }
       if (!silent && Array.isArray(result.bills)) {
         showToast(`⚡ Synced ${result.bills.length} bills from AWS DynamoDB!`, 'success');
       }
@@ -2993,6 +2996,29 @@ async function fetchBillsFromCloud(silent = true) {
       appState.isSyncing = false;
       if (syncBtn) syncBtn.classList.remove('syncing');
       if (syncLabel) syncLabel.textContent = 'AWS Live';
+    }
+  }
+}
+
+function mergeCloudLocations(cloudLocs) {
+  if (!cloudLocs || typeof cloudLocs !== 'object') return;
+  let changed = false;
+  for (const [agentName, loc] of Object.entries(cloudLocs)) {
+    if (loc && loc.lat) {
+      const existing = appState.agentLocations[agentName];
+      if (!existing || (loc.timestamp || 0) > (existing.timestamp || 0)) {
+        appState.agentLocations[agentName] = loc;
+        changed = true;
+      }
+    }
+  }
+  if (changed) {
+    saveAgentLocationsToLocal();
+    if (appState.activeScreen === 'screen-attendance') {
+      renderAttendanceScreen();
+    }
+    if (appState.fleetMap && appState.fleetSubView === 'radar') {
+      refreshFleetMapPins();
     }
   }
 }
@@ -3948,15 +3974,24 @@ function renderOpsAttendance() {
           </div>
         </div>
 
-        <!-- Live Agent Location Row -->
-        <div class="fleet-agent-loc-row" style="padding: 8px 14px; background: rgba(0,0,0,0.2); border-radius: 8px; margin: 10px 14px 0 14px; display: flex; align-items: center; justify-content: space-between; font-size: 12px;">
-          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            <i class="fa-solid fa-location-crosshairs text-primary"></i>
-            <span style="color: var(--text-main); font-weight: 600;">${agentLoc.address || 'Active Zone'}</span>
+        <!-- Live Agent On-Duty Location & Route Trail Row -->
+        <div class="fleet-agent-loc-row" style="padding: 10px 14px; background: rgba(0,0,0,0.25); border-radius: 8px; margin: 10px 14px 0 14px; display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${isOnDuty ? '<span class="status-dot dot-green"></span>' : '<span class="status-dot dot-red"></span>'}
+              <strong style="color: ${isOnDuty ? 'var(--primary)' : 'var(--text-muted)'};">${isOnDuty ? 'Live Location:' : 'Last Recorded:'}</strong>
+              <span style="color: var(--text-main); font-weight: 600;">${agentLoc.address || 'Active Route'}</span>
+            </div>
+            <a href="${mapGoogleLink}" target="_blank" class="btn-text-xs" onclick="event.stopPropagation()" style="white-space: nowrap;">
+              <i class="fa-solid fa-location-arrow"></i> ${isOnDuty ? 'Live Map' : 'Map'}
+            </a>
           </div>
-          <a href="${mapGoogleLink}" target="_blank" class="btn-text-xs" onclick="event.stopPropagation()" style="white-space: nowrap;">
-            <i class="fa-solid fa-arrow-up-right-from-square"></i> Map
-          </a>
+          <div style="font-size: 11px; color: var(--text-muted); display: flex; align-items: center; justify-content: space-between;">
+            <span><i class="fa-solid fa-clock"></i> Punch-In: ${att.punchInLocation?.address || 'Store Hub'} (${att.punchInTime || '-'})</span>
+            <button type="button" class="btn-text-xs" onclick="openAgentRouteTrailModal('${agentName}')" style="color: var(--primary); font-weight: 700;">
+              <i class="fa-solid fa-route"></i> Route Trail (${(att.routeHistory || []).length} stops)
+            </button>
+          </div>
         </div>
 
         <div class="fleet-agent-metrics">
@@ -3980,6 +4015,61 @@ function renderOpsAttendance() {
       </div>
     `;
   }).join('');
+}
+
+function openAgentRouteTrailModal(agentName) {
+  const att = appState.attendance[agentName];
+  if (!att) return;
+
+  const modal = document.getElementById('agent-route-trail-modal');
+  const nameEl = document.getElementById('modal-route-agent-name');
+  const subtitleEl = document.getElementById('modal-route-agent-subtitle');
+  const listEl = document.getElementById('modal-route-trail-list');
+
+  if (nameEl) nameEl.textContent = agentName;
+  if (subtitleEl) {
+    subtitleEl.textContent = att.status === 'on_duty' 
+      ? `🟢 Active Shift Route Trail • Clocked In at ${att.punchInTime || 'Today'} (${att.punchInLocation?.address || 'Store Hub'})`
+      : `Shift Inactive • Last Clock Out at ${att.punchOutTime || 'Shift End'}`;
+  }
+
+  const history = att.routeHistory || [];
+  if (listEl) {
+    if (history.length === 0) {
+      listEl.innerHTML = `
+        <div class="empty-state" style="padding: 24px; text-align: center;">
+          <div class="empty-state-icon" style="font-size: 32px; color: var(--primary); margin-bottom: 8px;"><i class="fa-solid fa-route"></i></div>
+          <h4 style="color: var(--text-heading); margin-bottom: 4px;">No route breadcrumbs logged yet</h4>
+          <p style="color: var(--text-muted); font-size: 13px;">Waypoints are logged automatically every 45s while ${agentName} is on duty until logout.</p>
+        </div>
+      `;
+    } else {
+      listEl.innerHTML = history.slice().reverse().map((pt, idx) => `
+        <div class="timeline-entry" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg-card-subtle); border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border-color);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--primary-subtle); color: var(--primary); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">
+              ${history.length - idx}
+            </div>
+            <div>
+              <strong style="display: block; font-size: 13px; color: var(--text-heading);">${pt.address || 'Duty Waypoint'}</strong>
+              <small style="color: var(--text-muted); font-size: 11px;"><i class="fa-regular fa-clock"></i> ${pt.time || 'Timestamp'} &bull; ${Number(pt.lat).toFixed(4)}°, ${Number(pt.lng).toFixed(4)}°</small>
+            </div>
+          </div>
+          <a href="https://www.google.com/maps?q=${pt.lat},${pt.lng}" target="_blank" class="btn-text-xs" onclick="event.stopPropagation()" style="color: var(--primary); white-space: nowrap;">
+            <i class="fa-solid fa-location-arrow"></i> Map
+          </a>
+        </div>
+      `).join('');
+    }
+  }
+
+  if (modal) modal.classList.add('active');
+}
+
+function closeAgentRouteTrailModal(e) {
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('btn-close')) return;
+  const modal = document.getElementById('agent-route-trail-modal');
+  if (modal) modal.classList.remove('active');
 }
 
 function filterFleetAttendance(filter, btn) {
@@ -4355,16 +4445,52 @@ function applyDeviceGPSPosition(pos) {
   updateLocationUIElements();
 }
 
+let lastLocationCloudSyncTime = 0;
+
 function updateAgentLocationState(agentName, locObj) {
   if (!agentName || !locObj) return;
-  appState.agentLocations[agentName] = {
+
+  const currentLoc = {
     lat: locObj.lat,
     lng: locObj.lng,
     accuracy: locObj.accuracy || 5,
     address: locObj.address || 'Active Route',
     timestamp: Date.now()
   };
+
+  appState.agentLocations[agentName] = currentLoc;
   saveAgentLocationsToLocal();
+
+  // If agent is on duty, log shift route waypoints until logout
+  const attRecord = appState.attendance[agentName];
+  if (attRecord && attRecord.status === 'on_duty') {
+    if (!attRecord.routeHistory) attRecord.routeHistory = [];
+    const lastPoint = attRecord.routeHistory[attRecord.routeHistory.length - 1];
+    const now = Date.now();
+
+    // Log new waypoint if moved or 45s elapsed
+    const shouldAdd = !lastPoint || (now - (lastPoint.timestamp || 0) > 45000);
+    if (shouldAdd) {
+      attRecord.routeHistory.push({
+        lat: currentLoc.lat,
+        lng: currentLoc.lng,
+        address: currentLoc.address,
+        time: formatCurrentTime(),
+        timestamp: now
+      });
+      if (attRecord.routeHistory.length > 100) {
+        attRecord.routeHistory = attRecord.routeHistory.slice(-100);
+      }
+      saveAttendanceToLocal(false);
+    }
+
+    // Throttled sync to AWS DynamoDB every 6s
+    if (now - lastLocationCloudSyncTime > 6000) {
+      lastLocationCloudSyncTime = now;
+      triggerAutoCloudSync(appState.agentLocations, 'update_locations');
+    }
+  }
+
   if (appState.fleetMap && appState.fleetSubView === 'radar') {
     refreshFleetMapPins();
   }

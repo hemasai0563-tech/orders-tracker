@@ -32,15 +32,19 @@ export const handler = async (event) => {
       const scanBillsRes = await ddb.send(new ScanCommand({ TableName: BILLS_TABLE }));
       const bills = scanBillsRes.Items || [];
 
-      // 2. Fetch Attendance and Accounts config
+      // 2. Fetch Attendance, Accounts, and Locations config
       let attendance = null;
       let accounts = null;
+      let locations = null;
       try {
         const attRes = await ddb.send(new GetCommand({ TableName: CONFIG_TABLE, Key: { configKey: "attendance" } }));
         attendance = attRes.Item?.data || null;
 
         const accRes = await ddb.send(new GetCommand({ TableName: CONFIG_TABLE, Key: { configKey: "accounts" } }));
         accounts = accRes.Item?.data || null;
+
+        const locRes = await ddb.send(new GetCommand({ TableName: CONFIG_TABLE, Key: { configKey: "agent_locations" } }));
+        locations = locRes.Item?.data || null;
       } catch (err) {
         console.warn("Config fetch warning:", err);
       }
@@ -54,6 +58,7 @@ export const handler = async (event) => {
           bills: bills,
           attendance: attendance,
           accounts: accounts,
+          locations: locations,
           serverTime: new Date().toISOString()
         })
       };
@@ -115,6 +120,25 @@ export const handler = async (event) => {
           statusCode: 200,
           headers: CORS_HEADERS,
           body: JSON.stringify({ status: "success", message: "Accounts synced to AWS." })
+        };
+      }
+
+      // 3. Update Agent Locations (Live Duty Telemetry)
+      if (action === "update_locations" || action === "update_agent_location" || body.agentLocations || body.locations) {
+        const locData = body.agentLocations || body.locations || body.data;
+        await ddb.send(new PutCommand({
+          TableName: CONFIG_TABLE,
+          Item: {
+            configKey: "agent_locations",
+            data: locData,
+            updatedAt: new Date().toISOString()
+          }
+        }));
+
+        return {
+          statusCode: 200,
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ status: "success", message: "Live agent locations synced to AWS." })
         };
       }
 
