@@ -1036,8 +1036,15 @@
             <button class="btn btn-outline btn-block text-left text-danger" onclick="confirmClearLocalData()">
               <i class="fa-solid fa-trash-can"></i> 
               <div>
-                <strong>Clear All Local Bills</strong>
-                <small class="block-hint">Erase current local cache</small>
+                <strong>Clear Local Bills Cache</strong>
+                <small class="block-hint">Erase current device local cache</small>
+              </div>
+            </button>
+            <button class="btn btn-outline btn-block text-left text-danger" style="border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.05);" onclick="confirmFactoryResetAllData()">
+              <i class="fa-solid fa-triangle-exclamation"></i> 
+              <div>
+                <strong>Factory Reset (Wipe Cloud & Reset PIN 1830)</strong>
+                <small class="block-hint">Permanently clears all cloud bills, attendance, and resets owner PIN to 1830</small>
               </div>
             </button>
           </div>
@@ -1748,7 +1755,12 @@
 
           <div class="form-group">
             <label for="newstaff-pin"><i class="fa-solid fa-key"></i> Set 4-Digit Login PIN <span class="text-danger">*</span></label>
-            <input type="password" id="newstaff-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 5555" required />
+            <div class="pin-input-wrapper">
+              <input type="password" id="newstaff-pin" inputmode="numeric" maxlength="6" placeholder="e.g. 5555" required />
+              <button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility('newstaff-pin')" title="Show/Hide PIN">
+                <i class="fa-solid fa-eye" id="newstaff-pin-eye"></i>
+              </button>
+            </div>
           </div>
 
           <div class="form-group" id="newstaff-route-group">
@@ -1760,6 +1772,86 @@
             <button type="button" class="btn btn-outline" onclick="closeAddStaffModal()">Cancel</button>
             <button type="submit" class="btn btn-primary btn-lg">
               <i class="fa-solid fa-circle-check"></i> Create Account
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ==================== EDIT STAFF ACCOUNT & PIN MODAL (OWNER ONLY) ==================== -->
+    <div id="edit-staff-modal" class="modal-overlay" onclick="closeEditStaffModal(event)">
+      <div class="modal-card modal-compact" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-user-pen text-primary"></i> Edit Profile & PIN</h3>
+            <small id="editstaff-modal-subtitle">Update Staff Details, Role & Passcode</small>
+          </div>
+          <button class="btn-close" onclick="closeEditStaffModal()">&times;</button>
+        </div>
+        <form onsubmit="handleEditStaffAccountSubmit(event)" class="modal-body">
+          <input type="hidden" id="editstaff-id" value="" />
+
+          <div class="form-group">
+            <label><i class="fa-solid fa-user-shield"></i> Account Role <span class="text-danger">*</span></label>
+            <div class="role-selector-3" id="editstaff-role-selector">
+              <label class="role-option" id="editstaff-role-agent-label">
+                <input type="radio" name="editstaff-role" value="agent" onchange="updateEditStaffRole('agent')">
+                <div class="role-box">
+                  <i class="fa-solid fa-person-biking"></i>
+                  <span class="role-title">Delivery Fleet</span>
+                </div>
+              </label>
+              <label class="role-option" id="editstaff-role-ops-label">
+                <input type="radio" name="editstaff-role" value="ops" onchange="updateEditStaffRole('ops')">
+                <div class="role-box">
+                  <i class="fa-solid fa-user-gear"></i>
+                  <span class="role-title">Operations</span>
+                </div>
+              </label>
+              <label class="role-option" id="editstaff-role-owner-label">
+                <input type="radio" name="editstaff-role" value="owner" onchange="updateEditStaffRole('owner')">
+                <div class="role-box">
+                  <i class="fa-solid fa-crown"></i>
+                  <span class="role-title">Store Owner</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group mt-2">
+            <label for="editstaff-name"><i class="fa-solid fa-user"></i> Full Name <span class="text-danger">*</span></label>
+            <input type="text" id="editstaff-name" placeholder="Full Name" required autocomplete="off" />
+          </div>
+
+          <div class="form-group">
+            <label for="editstaff-phone"><i class="fa-solid fa-phone"></i> Mobile / Employee ID</label>
+            <input type="tel" id="editstaff-phone" placeholder="Mobile Number" />
+          </div>
+
+          <div class="form-group">
+            <label for="editstaff-pin"><i class="fa-solid fa-key"></i> 4-Digit Login PIN <span class="text-danger">*</span></label>
+            <div class="pin-input-wrapper">
+              <input type="password" id="editstaff-pin" inputmode="numeric" maxlength="6" placeholder="Enter 4-Digit PIN" required />
+              <button type="button" class="btn-toggle-pw" onclick="togglePasswordVisibility('editstaff-pin')" title="Show/Hide PIN">
+                <i class="fa-solid fa-eye" id="editstaff-pin-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group" id="editstaff-route-group">
+            <label for="editstaff-route"><i class="fa-solid fa-route"></i> Assigned Delivery Zone / Route</label>
+            <input type="text" id="editstaff-route" placeholder="e.g. Block A & B, West Sector" />
+          </div>
+
+          <div class="form-group hidden" id="editstaff-storename-group">
+            <label for="editstaff-storename"><i class="fa-solid fa-store"></i> Store Name</label>
+            <input type="text" id="editstaff-storename" placeholder="e.g. rad. Express Flagship" />
+          </div>
+
+          <div class="modal-actions-grid mt-4">
+            <button type="button" class="btn btn-outline" onclick="closeEditStaffModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary btn-lg">
+              <i class="fa-solid fa-floppy-disk"></i> Save Profile & PIN
             </button>
           </div>
         </form>

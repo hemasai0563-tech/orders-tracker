@@ -13,14 +13,14 @@
 const DEFAULT_AWS_API_URL = 'https://6rvn28uvv1.execute-api.us-east-1.amazonaws.com';
 
 const STORAGE_KEYS = {
-  BILLS: 'retail_bills_data_v9',
-  AUTH: 'retail_bills_auth_v6',
+  BILLS: 'retail_bills_data_v10',
+  AUTH: 'retail_bills_auth_v7',
   AWS_API_URL: 'retail_bills_aws_api_v1',
   STORE_UPI: 'retail_bills_store_upi_v5',
-  ATTENDANCE: 'retail_bills_attendance_v9',
+  ATTENDANCE: 'retail_bills_attendance_v10',
   THEME: 'retail_bills_theme_v1',
-  ACCOUNTS: 'retail_bills_accounts_v8',
-  LOCATIONS: 'retail_bills_agent_locations_v1'
+  ACCOUNTS: 'retail_bills_accounts_v9',
+  LOCATIONS: 'retail_bills_agent_locations_v2'
 };
 
 const DEFAULT_ACCOUNTS = [
@@ -29,7 +29,7 @@ const DEFAULT_ACCOUNTS = [
     role: 'owner',
     name: 'Store Owner',
     phone: '9999999999',
-    pin: '9999',
+    pin: '1830',
     storeName: 'rad. Express Flagship',
     createdAt: '2026-10-01'
   }
@@ -43,13 +43,8 @@ const DEFAULT_ATTENDANCE = {};
 
 const DEFAULT_SAMPLE_BILLS = [];
 
-// Default coordinates for delivery fleet locations (Hyderabad retail zone)
-const DEFAULT_AGENT_LOCATIONS = {
-  'Rahul Sharma': { lat: 17.44829, lng: 78.37284, accuracy: 4, address: 'Cyber Towers, Hitec City', timestamp: Date.now() },
-  'Vikram Singh': { lat: 17.46124, lng: 78.36195, accuracy: 6, address: 'Botanical Garden Rd, Kondapur', timestamp: Date.now() },
-  'Suresh Kumar': { lat: 17.43992, lng: 78.34891, accuracy: 5, address: 'Financial Dist, Gachibowli', timestamp: Date.now() },
-  'Amit Patel': { lat: 17.43005, lng: 78.40798, accuracy: 7, address: 'Road No 36, Jubilee Hills', timestamp: Date.now() }
-};
+// Default coordinates for delivery fleet locations (empty for fresh start)
+const DEFAULT_AGENT_LOCATIONS = {};
 
 let appState = {
   accounts: [],
@@ -140,10 +135,11 @@ function applyTheme(theme) {
 function loadSavedData() {
   // Purge legacy storage versions
   [
-    'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7', 'retail_bills_data_v8',
-    'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7', 'retail_bills_attendance_v8',
-    'retail_bills_accounts_v1', 'retail_bills_accounts_v2', 'retail_bills_accounts_v3', 'retail_bills_accounts_v4', 'retail_bills_accounts_v5', 'retail_bills_accounts_v6', 'retail_bills_accounts_v7',
-    'retail_bills_auth_v1', 'retail_bills_auth_v2', 'retail_bills_auth_v3', 'retail_bills_auth_v4', 'retail_bills_auth_v5'
+    'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7', 'retail_bills_data_v8', 'retail_bills_data_v9',
+    'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7', 'retail_bills_attendance_v8', 'retail_bills_attendance_v9',
+    'retail_bills_accounts_v1', 'retail_bills_accounts_v2', 'retail_bills_accounts_v3', 'retail_bills_accounts_v4', 'retail_bills_accounts_v5', 'retail_bills_accounts_v6', 'retail_bills_accounts_v7', 'retail_bills_accounts_v8',
+    'retail_bills_auth_v1', 'retail_bills_auth_v2', 'retail_bills_auth_v3', 'retail_bills_auth_v4', 'retail_bills_auth_v5', 'retail_bills_auth_v6',
+    'retail_bills_agent_locations_v1'
   ].forEach(k => localStorage.removeItem(k));
 
   // Check URL query param if custom api passed
@@ -527,8 +523,8 @@ function handleLogin(event) {
   if (role === 'owner') {
     const ownerAccounts = appState.accounts.filter(a => a.role === 'owner');
     const matchedOwner = ownerAccounts.find(a => a.pin === pin);
-    if (!matchedOwner && pin !== '9999' && pin !== 'owner123') {
-      showToast('Incorrect Store Owner PIN!', 'danger');
+    if (!matchedOwner && pin !== '1830' && pin !== 'owner123') {
+      showToast('Incorrect Store Owner PIN! (Default: 1830)', 'danger');
       if (pinInput) pinInput.value = '';
       return;
     }
@@ -631,11 +627,16 @@ function renderStaffAccountsList() {
               <p class="staff-sub-desc">${subDesc}</p>
             </div>
           </div>
-          ${!isMaster ? `
-            <button type="button" class="btn-del-staff" onclick="deleteStaffAccount('${acc.id}')" title="Delete Account">
-              <i class="fa-solid fa-trash-can"></i>
+          <div class="staff-card-actions">
+            <button type="button" class="btn-edit-staff" onclick="openEditStaffModal('${acc.id}')" title="Edit Profile & PIN">
+              <i class="fa-solid fa-user-pen"></i> Edit
             </button>
-          ` : ''}
+            ${!isMaster ? `
+              <button type="button" class="btn-del-staff" onclick="deleteStaffAccount('${acc.id}')" title="Delete Account">
+                <i class="fa-solid fa-trash-can"></i>
+              </button>
+            ` : ''}
+          </div>
         </div>
         <div class="staff-card-bottom-row">
           <div class="staff-badges-group">
@@ -712,6 +713,11 @@ function handleCreateStaffAccountSubmit(event) {
     return;
   }
 
+  if (!pin || pin.length < 4) {
+    showToast('Please set a PIN with at least 4 digits', 'warning');
+    return;
+  }
+
   // Check duplicate name
   if (appState.accounts.some(a => a.name.toLowerCase() === name.toLowerCase())) {
     showToast(`An account named "${name}" already exists!`, 'danger');
@@ -755,6 +761,160 @@ function handleCreateStaffAccountSubmit(event) {
   renderStaffAccountsList();
   closeAddStaffModal();
   showToast(`🎉 Staff account created for ${name} (${role === 'agent' ? 'Delivery Fleet' : 'Operations'})`, 'success');
+}
+
+// ----------------------------------------------------
+// EDIT STAFF ACCOUNT & PIN FUNCTIONS
+// ----------------------------------------------------
+function openEditStaffModal(accountId) {
+  const acc = appState.accounts.find(a => a.id === accountId);
+  if (!acc) return;
+
+  const modal = document.getElementById('edit-staff-modal');
+  const idInput = document.getElementById('editstaff-id');
+  const nameInput = document.getElementById('editstaff-name');
+  const phoneInput = document.getElementById('editstaff-phone');
+  const pinInput = document.getElementById('editstaff-pin');
+  const routeInput = document.getElementById('editstaff-route');
+  const storeNameInput = document.getElementById('editstaff-storename');
+  const subtitle = document.getElementById('editstaff-modal-subtitle');
+
+  if (idInput) idInput.value = acc.id;
+  if (nameInput) nameInput.value = acc.name || '';
+  if (phoneInput) phoneInput.value = acc.phone || '';
+  if (pinInput) pinInput.value = acc.pin || '';
+  if (routeInput) routeInput.value = acc.route || '';
+  if (storeNameInput) storeNameInput.value = acc.storeName || '';
+  if (subtitle) subtitle.textContent = `Editing profile for: ${acc.name}`;
+
+  updateEditStaffRole(acc.role || 'agent');
+
+  if (modal) modal.classList.add('active');
+}
+
+function closeEditStaffModal(e) {
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('btn-close') && !e.target.classList.contains('btn-outline')) return;
+  const modal = document.getElementById('edit-staff-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function updateEditStaffRole(role) {
+  const agentLabel = document.getElementById('editstaff-role-agent-label');
+  const opsLabel = document.getElementById('editstaff-role-ops-label');
+  const ownerLabel = document.getElementById('editstaff-role-owner-label');
+  const routeGroup = document.getElementById('editstaff-route-group');
+  const storeGroup = document.getElementById('editstaff-storename-group');
+
+  agentLabel?.classList.remove('active');
+  opsLabel?.classList.remove('active');
+  ownerLabel?.classList.remove('active');
+
+  const radio = document.querySelector(`input[name="editstaff-role"][value="${role}"]`);
+  if (radio) radio.checked = true;
+
+  if (role === 'agent') {
+    agentLabel?.classList.add('active');
+    if (routeGroup) routeGroup.style.display = 'block';
+    if (storeGroup) storeGroup.classList.add('hidden');
+  } else if (role === 'ops') {
+    opsLabel?.classList.add('active');
+    if (routeGroup) routeGroup.style.display = 'none';
+    if (storeGroup) storeGroup.classList.add('hidden');
+  } else if (role === 'owner') {
+    ownerLabel?.classList.add('active');
+    if (routeGroup) routeGroup.style.display = 'none';
+    if (storeGroup) storeGroup.classList.remove('hidden');
+  }
+}
+
+function handleEditStaffAccountSubmit(event) {
+  event.preventDefault();
+  const id = document.getElementById('editstaff-id')?.value;
+  const acc = appState.accounts.find(a => a.id === id);
+  if (!acc) {
+    showToast('Account not found!', 'danger');
+    return;
+  }
+
+  const roleRadio = document.querySelector('input[name="editstaff-role"]:checked');
+  const nameInput = document.getElementById('editstaff-name');
+  const phoneInput = document.getElementById('editstaff-phone');
+  const pinInput = document.getElementById('editstaff-pin');
+  const routeInput = document.getElementById('editstaff-route');
+  const storeNameInput = document.getElementById('editstaff-storename');
+
+  const role = roleRadio ? roleRadio.value : (acc.role || 'agent');
+  const name = nameInput ? nameInput.value.trim() : acc.name;
+  const phone = phoneInput ? phoneInput.value.trim() : '';
+  const pin = pinInput ? pinInput.value.trim() : acc.pin;
+  const route = routeInput ? routeInput.value.trim() : '';
+  const storeName = storeNameInput ? storeNameInput.value.trim() : '';
+
+  if (!name) {
+    showToast('Please enter full name', 'warning');
+    return;
+  }
+
+  if (!pin || pin.length < 4) {
+    showToast('PIN must be at least 4 digits', 'warning');
+    return;
+  }
+
+  const oldName = acc.name;
+  const isSelf = appState.currentUser && (appState.currentUser.name === oldName || (appState.currentUser.role === 'owner' && acc.role === 'owner'));
+
+  // Update account fields
+  acc.role = role;
+  acc.name = name;
+  acc.phone = phone;
+  acc.pin = pin;
+  acc.route = route;
+  if (role === 'owner' && storeName) {
+    acc.storeName = storeName;
+  }
+
+  // If agent name was changed, migrate attendance & bills
+  if (oldName !== name) {
+    if (appState.attendance[oldName]) {
+      appState.attendance[name] = appState.attendance[oldName];
+      delete appState.attendance[oldName];
+      saveAttendanceToLocal();
+      triggerAutoCloudSync({ attendance: appState.attendance }, 'update_attendance');
+    }
+    if (appState.agentLocations[oldName]) {
+      appState.agentLocations[name] = appState.agentLocations[oldName];
+      delete appState.agentLocations[oldName];
+      saveAgentLocationsToLocal();
+    }
+    appState.bills.forEach(b => {
+      if (isSameAgent(b.deliveryAgent, oldName)) {
+        b.deliveryAgent = name;
+        b.lastUpdated = new Date().toISOString();
+        triggerAutoCloudSync(b, 'upsert_bill');
+      }
+    });
+    saveBillsToLocal();
+  }
+
+  // If user edited their own logged-in account, update current user session
+  if (isSelf) {
+    appState.currentUser.name = role === 'agent' ? `${name} (Agent)` : name;
+    if (role === 'agent') appState.currentUser.agentName = name;
+    appState.currentUser.role = role;
+    localStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(appState.currentUser));
+    applyUserRoleUI();
+  }
+
+  saveAccountsToLocal();
+  triggerAutoCloudSync({ accounts: appState.accounts }, 'update_accounts');
+
+  refreshAgentsListFromAccounts();
+  populateAuthStaffDropdowns();
+  populateAllAgentSelectElements();
+  renderStaffAccountsList();
+  closeEditStaffModal();
+  showToast(`✅ Profile and PIN updated for "${name}" (PIN: ${pin})`, 'success');
+  renderApp();
 }
 
 function deleteStaffAccount(accountId) {
@@ -2726,7 +2886,8 @@ function handleSelectPaymentModeSubmit(event) {
   triggerAutoCloudSync(bill, 'upsert_bill');
 
   closePaymentModeModal();
-  openBillDetailModal(bill.invoiceNo);
+  const billDetailModal = document.getElementById('bill-detail-modal');
+  if (billDetailModal) billDetailModal.classList.remove('active');
   renderApp();
 }
 
@@ -3083,13 +3244,14 @@ function mergeCloudBills(cloudBills) {
         deliveryAgent: cb.deliveryAgent || 'Unassigned',
         deliveryStatus: cb.deliveryStatus || 'Pending',
         deliveredDate: cb.deliveredDate || '',
-        deliveryProofPhoto: cb.deliveryProofPhoto || '',
+        deliveryProof: cb.deliveryProof || cb.deliveryProofPhoto || '',
         deliveryProofTime: cb.deliveryProofTime || '',
+        deliveryLocation: cb.deliveryLocation || null,
         paymentStatus: cb.paymentStatus || 'Unpaid',
         amountReceived: Number(cb.amountReceived) || 0,
         balance: Number(cb.balance) || (Number(cb.billAmount) || 0),
         paymentMode: cb.paymentMode || 'UNPAID',
-        paymentProofPhoto: cb.paymentProofPhoto || '',
+        paymentProof: cb.paymentProof || cb.paymentProofPhoto || '',
         paymentProofTime: cb.paymentProofTime || '',
         daysPending: Number(cb.daysPending) || 0,
         remarks: cb.remarks || '',
@@ -3289,6 +3451,61 @@ function confirmClearLocalData() {
     showToast('All local bills cleared.', 'info');
     renderApp();
   }
+}
+
+async function confirmFactoryResetAllData() {
+  if (!appState.currentUser || appState.currentUser.role !== 'owner') {
+    showToast('Only Store Owner can perform Factory Reset!', 'danger');
+    return;
+  }
+
+  const promptPin = prompt('⚠️ FACTORY RESET WARNING: This will erase all bills, attendance, and reset accounts to Store Owner with PIN 1830.\n\nEnter Store Owner PIN to confirm:');
+  if (promptPin !== '1830') {
+    showToast('Incorrect PIN or Factory Reset cancelled.', 'warning');
+    return;
+  }
+
+  appState.bills = [];
+  appState.attendance = {};
+  appState.agentLocations = {};
+  appState.accounts = [
+    {
+      id: 'acc-admin-1',
+      role: 'owner',
+      name: 'Store Owner',
+      phone: '9999999999',
+      pin: '1830',
+      storeName: 'rad. Express Flagship',
+      createdAt: getTodayISODate()
+    }
+  ];
+
+  saveBillsToLocal();
+  saveAttendanceToLocal(true);
+  saveAccountsToLocal(true);
+  saveAgentLocationsToLocal();
+
+  if (appState.apiUrl) {
+    try {
+      await fetch(appState.apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync_all',
+          bills: [],
+          accounts: appState.accounts,
+          attendance: {},
+          locations: {}
+        })
+      });
+    } catch (e) {}
+  }
+
+  refreshAgentsListFromAccounts();
+  populateAuthStaffDropdowns();
+  populateAllAgentSelectElements();
+  showToast('✨ Factory Reset complete! All data cleared, Owner PIN set to 1830.', 'success');
+  renderApp();
 }
 
 // ==========================================
