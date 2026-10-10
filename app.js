@@ -357,6 +357,15 @@ function isSameAgent(agentA, agentB) {
   return String(agentA).trim().toLowerCase() === String(agentB).trim().toLowerCase();
 }
 
+function isAgentOnDuty(agentName) {
+  const name = agentName || appState.currentUser?.agentName;
+  if (!name) return false;
+  const att = appState.attendance[name];
+  if (!att) return false;
+  const todayStr = getTodayISODate();
+  return (att.status === 'on_duty' || att.status === 'on_break') && (att.punchInDate === todayStr);
+}
+
 function recalculateAllBills() {
   appState.bills = appState.bills.map(recalculateBill);
   saveBillsToLocal();
@@ -376,6 +385,14 @@ function initAuthSession() {
       appState.currentUser = JSON.parse(savedAuth);
       applyUserRoleUI();
       hideAuthOverlay();
+
+      // Attendance check for logged-in delivery agents
+      if (appState.currentUser.role === 'agent') {
+        if (!isAgentOnDuty()) {
+          navigateToScreen('screen-attendance');
+          showToast(`Welcome back, ${appState.currentUser.agentName}! Please punch in attendance first to access deliveries.`, 'info');
+        }
+      }
     } catch (e) {
       showAuthOverlay();
     }
@@ -582,6 +599,18 @@ function handleLogin(event) {
   applyUserRoleUI();
   hideAuthOverlay();
   showToast(`Signed in as ${user.name}`, 'success');
+
+  // Enforce attendance first for delivery agents
+  if (user.role === 'agent') {
+    if (!isAgentOnDuty(agentName)) {
+      navigateToScreen('screen-attendance');
+      renderApp();
+      promptPunchIn();
+      showToast(`Welcome ${agentName}! Please punch in attendance first to start deliveries.`, 'warning');
+      return;
+    }
+  }
+
   navigateToScreen('screen-pending-deliveries');
   renderApp();
 }
@@ -1120,6 +1149,14 @@ function navigateToScreen(screenId) {
     return;
   }
 
+  // Mandatory Attendance Guard: Delivery agents must clock in before accessing deliveries or any other activities
+  if (appState.currentUser.role === 'agent' && screenId !== 'screen-attendance') {
+    if (!isAgentOnDuty()) {
+      showToast('⚠️ Attendance required! Please clock in first before accessing deliveries or activity.', 'warning');
+      screenId = 'screen-attendance';
+    }
+  }
+
   appState.activeScreen = screenId;
 
   const navItems = document.querySelectorAll('.bottom-nav .nav-item');
@@ -1461,6 +1498,28 @@ function renderPendingDeliveries() {
 
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
   const agentName = appState.currentUser?.agentName;
+
+  // Block delivery activities if agent has not punched in today
+  if (isAgent && !isAgentOnDuty(agentName)) {
+    if (heroLabel) heroLabel.textContent = `My Deliveries (${agentName ? agentName.split(' ')[0] : 'Agent'})`;
+    if (totalCountEl) totalCountEl.textContent = '0';
+    if (oldestDaysEl) oldestDaysEl.textContent = 'Attendance check-in required';
+    container.innerHTML = `
+      <div class="empty-state" style="padding: 32px 16px; text-align: center;">
+        <div class="empty-state-icon" style="color: var(--warning); font-size: 44px; margin-bottom: 12px;">
+          <i class="fa-solid fa-user-clock"></i>
+        </div>
+        <h3 style="color: var(--text-heading); margin-bottom: 8px;">Attendance Check-In Required</h3>
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
+          You are currently <strong>OFF DUTY</strong>. Store policy requires marking attendance with a quick selfie before viewing or fulfilling deliveries.
+        </p>
+        <button class="btn btn-punch-in btn-block btn-lg" onclick="navigateToScreen('screen-attendance'); promptPunchIn();">
+          <i class="fa-solid fa-camera"></i> Punch In & Start Shift
+        </button>
+      </div>
+    `;
+    return;
+  }
 
   // All pending bills across the store
   const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && b.paymentStatus !== 'Paid');
@@ -2543,13 +2602,76 @@ function closeDeliveryProofModal(e) {
   if (modal) modal.classList.remove('active');
 }
 
-function handleProofImageSelected(event, type) {
+/**
+ * Compresses an image file (e.g. from smartphone camera) using an HTML5 Canvas.
+ * Reduces 5MB-15MB high-resolution camera photos to ~30-50KB JPEG base64 strings.
+ * Guarantees compatibility with AWS API Gateway (6MB max) and AWS DynamoDB (400KB item limit).
+ */
+function compressImageFile(file, maxWidth = 800, maxHeight = 800, quality = 0.65) {
+  return new Promise((resolve) => {
+    if (!file) return resolve('');
+    if (!file.type || !file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => resolve('');
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => resolve(e.target.result || '');
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth || height > maxHeight) {
+          if (width / maxWidth > height / maxHeight) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(e.target.result || '');
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        try {
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(compressedDataUrl);
+        } catch (err) {
+          console.warn('Canvas compression error:', err);
+          resolve(e.target.result || '');
+        }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleProofImageSelected(event, type) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    const dataUrl = e.target.result;
+  try {
+    showToast('Optimizing photo...', 'info');
+    const dataUrl = await compressImageFile(file, 800, 800, 0.65);
+    if (!dataUrl) {
+      showToast('Could not process photo. Please try again.', 'danger');
+      return;
+    }
 
     if (type === 'delivery') {
       appState.tempDeliveryProofData = dataUrl;
@@ -2560,7 +2682,7 @@ function handleProofImageSelected(event, type) {
       if (previewImg) previewImg.src = dataUrl;
       if (emptyPlaceholder) emptyPlaceholder.classList.add('hidden');
       if (previewWrapper) previewWrapper.classList.remove('hidden');
-      showToast('Delivery photo captured! Ready to confirm & collect payment.', 'info');
+      showToast('Delivery photo captured & optimized! Ready to confirm.', 'success');
     } else if (type === 'payment') {
       appState.tempPaymentProofData = dataUrl;
       const previewImg = document.getElementById('payproof-preview-img');
@@ -2570,10 +2692,12 @@ function handleProofImageSelected(event, type) {
       if (previewImg) previewImg.src = dataUrl;
       if (emptyPlaceholder) emptyPlaceholder.classList.add('hidden');
       if (previewWrapper) previewWrapper.classList.remove('hidden');
-      showToast('Payment proof attached!', 'info');
+      showToast('Payment proof attached & optimized!', 'success');
     }
-  };
-  reader.readAsDataURL(file);
+  } catch (err) {
+    console.error('Proof photo error:', err);
+    showToast('Photo processing error. Please re-take photo.', 'danger');
+  }
 }
 
 function handleDeliveryProofSubmit(event) {
@@ -3263,8 +3387,12 @@ function mergeCloudBills(cloudBills) {
       const cloudTime = new Date(cb.lastUpdated || 0).getTime();
       const localTime = new Date(existing.lastUpdated || 0).getTime();
 
-      // Only apply cloud changes if cloud has a strictly newer timestamp
-      if (cloudTime > localTime) {
+      const isCloudDelivered = cb.deliveryStatus === 'Delivered' && existing.deliveryStatus !== 'Delivered';
+      const isCloudPaid = cb.paymentStatus === 'Paid' && existing.paymentStatus !== 'Paid';
+      const isCloudNewer = cloudTime > localTime;
+
+      // Only apply cloud changes if cloud has a newer timestamp or progressed delivery/payment status
+      if (isCloudNewer || isCloudDelivered || isCloudPaid) {
         existing.flatNo = cb.flatNo || existing.flatNo;
         existing.billAmount = Number(cb.billAmount) || existing.billAmount;
         existing.billedDate = cb.billedDate || existing.billedDate;
@@ -3275,18 +3403,15 @@ function mergeCloudBills(cloudBills) {
         if (cb.deliveryProofTime) existing.deliveryProofTime = cb.deliveryProofTime;
         if (cb.deliveryLocation) existing.deliveryLocation = cb.deliveryLocation;
         existing.paymentStatus = cb.paymentStatus || existing.paymentStatus;
-        existing.amountReceived = Number(cb.amountReceived) || existing.amountReceived;
+        existing.amountReceived = Number(cb.amountReceived) || 0;
         existing.balance = Number(cb.balance) || 0;
         existing.paymentMode = cb.paymentMode || existing.paymentMode;
         if (cb.paymentProof || cb.paymentProofPhoto) existing.paymentProof = cb.paymentProof || cb.paymentProofPhoto;
         if (cb.paymentProofTime) existing.paymentProofTime = cb.paymentProofTime;
         existing.daysPending = Number(cb.daysPending) || existing.daysPending;
         existing.remarks = cb.remarks !== undefined ? cb.remarks : existing.remarks;
-        existing.lastUpdated = cb.lastUpdated;
+        existing.lastUpdated = cb.lastUpdated || new Date().toISOString();
         changesCount++;
-      } else if (localTime > cloudTime) {
-        // Local has newer changes not yet saved to cloud; push to cloud
-        triggerAutoCloudSync(existing, 'upsert_bill');
       }
     }
   });
@@ -4360,6 +4485,14 @@ function directClockIn(customAgent) {
   updateShiftTimerDisplay();
   renderAttendanceScreen();
   showToast(`🟢 Clocked In at ${timeStr} with GPS fix (${loc.address || 'Locked'})!`, 'success');
+
+  if (appState.currentUser?.role === 'agent') {
+    setTimeout(() => {
+      navigateToScreen('screen-pending-deliveries');
+      renderApp();
+      showToast('🚀 Attendance verified! You can now view and complete deliveries.', 'success');
+    }, 600);
+  }
 }
 
 function directClockOut(customAgent) {
@@ -4424,22 +4557,26 @@ function closeAttendancePhotoModal(e) {
   if (modal) modal.classList.remove('active');
 }
 
-function handleAttendancePhotoSelected(event) {
-  const file = event.target.files[0];
+async function handleAttendancePhotoSelected(event) {
+  const file = event.target.files && event.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    appState.tempAttendancePhoto = e.target.result;
+  try {
+    showToast('Processing selfie...', 'info');
+    const dataUrl = await compressImageFile(file, 600, 600, 0.65);
+    appState.tempAttendancePhoto = dataUrl;
     const placeholder = document.getElementById('att-photo-placeholder');
     const previewWrap = document.getElementById('att-photo-preview-wrap');
     const previewImg = document.getElementById('att-photo-preview-img');
 
     if (placeholder) placeholder.classList.add('hidden');
     if (previewWrap) previewWrap.classList.remove('hidden');
-    if (previewImg) previewImg.src = appState.tempAttendancePhoto;
-  };
-  reader.readAsDataURL(file);
+    if (previewImg) previewImg.src = dataUrl;
+    showToast('Selfie photo ready for check-in!', 'success');
+  } catch (err) {
+    console.error('Selfie processing error:', err);
+    showToast('Could not process selfie photo.', 'danger');
+  }
 }
 
 function confirmPunchInWithPhoto() {
@@ -4498,6 +4635,15 @@ function executePunchIn(photoData) {
   updateShiftTimerDisplay();
   renderAttendanceScreen();
   showToast(`🟢 ${agentName} is ON DUTY at ${timeStr} with GPS fix!`, 'success');
+
+  // If user is a delivery agent, automatically transition to deliveries screen!
+  if (appState.currentUser?.role === 'agent') {
+    setTimeout(() => {
+      navigateToScreen('screen-pending-deliveries');
+      renderApp();
+      showToast('🚀 Attendance verified! You can now view and complete deliveries.', 'success');
+    }, 600);
+  }
 }
 
 function punchOutCurrentAgent() {
