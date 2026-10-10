@@ -88,8 +88,107 @@ let appState = {
   fleetSubView: 'roster',
   fleetMap: null,
   fleetMapMarkers: [],
-  locationWatchId: null
+  locationWatchId: null,
+  // Order Assignment Sound & Notification Tracking:
+  knownAssignedInvoiceNos: new Set(),
+  hasInitializedAssignedTracking: false
 };
+
+// ==========================================
+// AUDIO NOTIFICATION SYSTEM FOR NEW ASSIGNMENTS
+// ==========================================
+let audioContextInstance = null;
+
+function getAudioContext() {
+  if (!audioContextInstance) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) {
+      audioContextInstance = new AudioCtx();
+    }
+  }
+  if (audioContextInstance && audioContextInstance.state === 'suspended') {
+    audioContextInstance.resume().catch(() => {});
+  }
+  return audioContextInstance;
+}
+
+// Automatically unlock audio context on first user tap/touch/keypress
+['click', 'touchstart', 'touchend', 'keydown'].forEach(evt => {
+  window.addEventListener(evt, () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume();
+      }
+    } catch (e) {}
+  }, { once: false, passive: true });
+});
+
+/**
+ * Plays an unmistakable, energetic multi-tone alert chime (Ding-Dong / Delivery Alert)
+ * accompanied by haptic phone vibration.
+ */
+function playNewOrderAlertSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+
+    const t = ctx.currentTime;
+
+    // First Ding (High C6: 1046.5 Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(1046.5, t);
+    gain1.gain.setValueAtTime(0.85, t);
+    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(t);
+    osc1.stop(t + 0.38);
+
+    // Second Dong (Harmonic G5: 783.99 Hz)
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(783.99, t + 0.22);
+    gain2.gain.setValueAtTime(0.95, t + 0.22);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(t + 0.22);
+    osc2.stop(t + 0.72);
+
+    // Third High Celebration Chime (E6: 1318.5 Hz)
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(1318.5, t + 0.45);
+    gain3.gain.setValueAtTime(0.8, t + 0.45);
+    gain3.gain.exponentialRampToValueAtTime(0.001, t + 1.15);
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    osc3.start(t + 0.45);
+    osc3.stop(t + 1.2);
+
+    // Haptic phone vibration pattern: Buzz-Pause-Buzz
+    if ('vibrate' in navigator) {
+      navigator.vibrate([280, 140, 380]);
+    }
+  } catch (err) {
+    console.warn('Audio alert error:', err);
+  }
+}
+
+function initAgentAssignedTracking() {
+  if (appState.currentUser?.role !== 'agent') return;
+  const agentName = appState.currentUser.agentName;
+  const currentAssigned = appState.bills
+    .filter(b => isSameAgent(b.deliveryAgent, agentName) && b.deliveryStatus !== 'Delivered')
+    .map(b => String(b.invoiceNo).trim());
+  appState.knownAssignedInvoiceNos = new Set(currentAssigned);
+  appState.hasInitializedAssignedTracking = true;
+}
 
 // ==========================================
 // 2. INITIALIZATION
@@ -386,8 +485,9 @@ function initAuthSession() {
       applyUserRoleUI();
       hideAuthOverlay();
 
-      // Attendance check for logged-in delivery agents
+      // Attendance check and assignment tracking for logged-in delivery agents
       if (appState.currentUser.role === 'agent') {
+        initAgentAssignedTracking();
         if (!isAgentOnDuty()) {
           navigateToScreen('screen-attendance');
           showToast(`Welcome back, ${appState.currentUser.agentName}! Please punch in attendance first to access deliveries.`, 'info');
@@ -602,6 +702,7 @@ function handleLogin(event) {
 
   // Enforce attendance first for delivery agents
   if (user.role === 'agent') {
+    initAgentAssignedTracking();
     if (!isAgentOnDuty(agentName)) {
       navigateToScreen('screen-attendance');
       renderApp();
@@ -1068,15 +1169,15 @@ function applyUserRoleUI() {
     }
   }
 
-  const agentBanner = document.getElementById('agent-active-banner');
-  const agentNameEl = document.getElementById('agent-active-name');
-  if (agentBanner) {
-    if (isAgent) {
-      agentBanner.classList.remove('hidden');
-      if (agentNameEl) agentNameEl.textContent = `${appState.currentUser.agentName}'s Route`;
-    } else {
-      agentBanner.classList.add('hidden');
-    }
+  const agentDashboard = document.getElementById('agent-delivery-dashboard');
+  const storeHeroBar = document.getElementById('store-delivery-hero-bar');
+  if (agentDashboard) {
+    if (isAgent) agentDashboard.classList.remove('hidden');
+    else agentDashboard.classList.add('hidden');
+  }
+  if (storeHeroBar) {
+    if (isAgent) storeHeroBar.classList.add('hidden');
+    else storeHeroBar.classList.remove('hidden');
   }
 }
 
@@ -1256,8 +1357,9 @@ function updateBadgeCounts() {
   let unpaidBills = appState.bills.filter(b => b.paymentStatus !== 'Paid');
 
   if (isAgent && agentName) {
-    pendingBills = pendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
-    unpaidBills = unpaidBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+    // Deliveries: ONLY orders allocated to THIS person (never merge unassigned or others)
+    pendingBills = pendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+    // Unpaid bills: delivery agents can see all store unpaid bills as requested
   }
 
   const pendingCount = pendingBills.length;
@@ -1529,19 +1631,69 @@ function renderPendingDeliveries() {
 
   if (isAgent && agentName) {
     if (heroLabel) heroLabel.textContent = `My Deliveries (${agentName.split(' ')[0]})`;
-    if (appState.filterPendingTab === 'all') {
-      // Show orders assigned to this agent + unassigned orders
-      pendingBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
-    } else if (appState.filterPendingTab === 'my_orders') {
-      pendingBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
-    } else if (appState.filterPendingTab === 'Unassigned') {
-      pendingBills = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
+
+    // CRITICAL: Delivery agent ONLY sees orders strictly allocated to THEM!
+    // Never merge unassigned orders or orders allocated to another person!
+    const myAllocatedBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+
+    if (appState.filterPendingTab === 'all' || appState.filterPendingTab === 'my_orders') {
+      pendingBills = myAllocatedBills;
     } else if (appState.filterPendingTab === 'Pending') {
-      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending' && (isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+      pendingBills = myAllocatedBills.filter(b => b.deliveryStatus === 'Pending');
     } else if (appState.filterPendingTab === 'Out for Delivery') {
-      pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery' && (isSameAgent(b.deliveryAgent, agentName) || !b.deliveryAgent || b.deliveryAgent === 'Unassigned'));
+      pendingBills = myAllocatedBills.filter(b => b.deliveryStatus === 'Out for Delivery');
+    } else {
+      pendingBills = myAllocatedBills;
+    }
+
+    // Agent KPI metrics
+    const myQueued = myAllocatedBills.filter(b => b.deliveryStatus === 'Pending').length;
+    const myOnRoad = myAllocatedBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
+    const myCashToCollect = myAllocatedBills
+      .filter(b => b.paymentStatus !== 'Paid')
+      .reduce((sum, b) => sum + (Number(b.balance) || Number(b.billAmount) || 0), 0);
+
+    const todayStr = getTodayISODate();
+    const myDoneToday = appState.bills.filter(b => 
+      isSameAgent(b.deliveryAgent, agentName) && 
+      b.deliveryStatus === 'Delivered' && 
+      (b.deliveredDate === todayStr || (b.lastUpdated && b.lastUpdated.startsWith(todayStr)))
+    ).length;
+
+    // Populate dedicated Agent Dashboard
+    const kpiAssignedEl = document.getElementById('agent-kpi-assigned');
+    const kpiCashEl = document.getElementById('agent-kpi-cash');
+    const kpiDeliveredEl = document.getElementById('agent-kpi-delivered');
+    const dashNameEl = document.getElementById('agent-dash-name');
+    const dashDutyEl = document.getElementById('agent-dash-duty-status');
+
+    if (kpiAssignedEl) kpiAssignedEl.textContent = myAllocatedBills.length;
+    if (kpiCashEl) kpiCashEl.textContent = formatCurrency(myCashToCollect);
+    if (kpiDeliveredEl) kpiDeliveredEl.textContent = myDoneToday;
+    if (dashNameEl) dashNameEl.textContent = `${agentName}'s Route`;
+    if (dashDutyEl) {
+      const isDuty = isAgentOnDuty(agentName);
+      dashDutyEl.innerHTML = isDuty 
+        ? `<span class="status-dot dot-green"></span> Active On Duty` 
+        : `<span class="status-dot dot-red"></span> Off Duty`;
+    }
+
+    if (totalCountEl) totalCountEl.textContent = myAllocatedBills.length;
+    if (countAll) countAll.textContent = myAllocatedBills.length;
+    if (countQueued) countQueued.textContent = myQueued;
+    if (countOutRoad) countOutRoad.textContent = myOnRoad;
+    if (countUnassigned) countUnassigned.textContent = '0';
+    if (chipUnassigned) chipUnassigned.classList.add('hidden');
+
+    if (myAllocatedBills.length > 0) {
+      const oldest = myAllocatedBills[0];
+      const days = calculateDaysPending(oldest.billedDate, 'Pending');
+      if (oldestDaysEl) oldestDaysEl.textContent = `Oldest: Flat ${oldest.flatNo} (${days}d ago)`;
+    } else {
+      if (oldestDaysEl) oldestDaysEl.textContent = 'All deliveries completed! 🎉';
     }
   } else {
+    // Store Owner / Operations:
     if (heroLabel) heroLabel.textContent = `All Pending Deliveries`;
     if (appState.filterPendingTab === 'Pending') {
       pendingBills = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending');
@@ -1550,34 +1702,45 @@ function renderPendingDeliveries() {
     } else if (appState.filterPendingTab === 'Unassigned') {
       pendingBills = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned');
     }
-  }
 
-  const totalPending = pendingBills.length;
-  const queuedCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending').length;
-  const outRoadCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
-  const unassignedCount = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned').length;
+    const totalPending = pendingBills.length;
+    const queuedCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending').length;
+    const outRoadCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
+    const unassignedCount = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned').length;
 
-  if (totalCountEl) totalCountEl.textContent = totalPending;
-  if (countAll) countAll.textContent = totalPending;
-  if (countQueued) countQueued.textContent = queuedCount;
-  if (countOutRoad) countOutRoad.textContent = outRoadCount;
-  if (countUnassigned) countUnassigned.textContent = unassignedCount;
-  if (chipUnassigned) chipUnassigned.classList.remove('hidden');
+    if (totalCountEl) totalCountEl.textContent = totalPending;
+    if (countAll) countAll.textContent = totalPending;
+    if (countQueued) countQueued.textContent = queuedCount;
+    if (countOutRoad) countOutRoad.textContent = outRoadCount;
+    if (countUnassigned) countUnassigned.textContent = unassignedCount;
+    if (chipUnassigned) chipUnassigned.classList.remove('hidden');
 
-  if (pendingBills.length > 0) {
-    const oldest = pendingBills[0];
-    const days = calculateDaysPending(oldest.billedDate, 'Pending');
-    if (oldestDaysEl) oldestDaysEl.textContent = `Oldest: Flat ${oldest.flatNo} (${days}d ago)`;
-  } else {
-    if (oldestDaysEl) oldestDaysEl.textContent = 'All deliveries completed! 🎉';
+    if (pendingBills.length > 0) {
+      const oldest = pendingBills[0];
+      const days = calculateDaysPending(oldest.billedDate, 'Pending');
+      if (oldestDaysEl) oldestDaysEl.textContent = `Oldest: Flat ${oldest.flatNo} (${days}d ago)`;
+    } else {
+      if (oldestDaysEl) oldestDaysEl.textContent = 'All deliveries completed! 🎉';
+    }
   }
 
   if (pendingBills.length === 0) {
     container.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon text-success"><i class="fa-solid fa-truck-ramp-box"></i></div>
-        <h3>No Pending Deliveries</h3>
-        <p>${isAgent ? 'No pending deliveries in this queue right now.' : 'All retail orders have been delivered.'}</p>
+      <div class="empty-state" style="padding: 36px 16px; text-align: center;">
+        <div class="empty-state-icon text-success" style="font-size: 44px; margin-bottom: 12px;">
+          <i class="fa-solid fa-circle-check"></i>
+        </div>
+        <h3 style="margin-bottom: 6px;">${isAgent ? 'All Deliveries Completed! 🎉' : 'No Pending Deliveries'}</h3>
+        <p style="color: var(--text-muted); font-size: 13.5px; max-width: 360px; margin: 0 auto 16px auto; line-height: 1.5;">
+          ${isAgent 
+            ? 'No pending orders allocated to you right now. You will receive an alert chime sound 🔔 and phone vibration as soon as an order is assigned!' 
+            : 'All retail orders have been delivered.'}
+        </p>
+        ${isAgent ? `
+          <button type="button" class="btn btn-outline" style="border-radius: 99px; font-size: 12px;" onclick="playNewOrderAlertSound(); showToast('🔔 Alert sound is working!', 'info');">
+            <i class="fa-solid fa-volume-high text-primary"></i> Test Alert Chime
+          </button>
+        ` : ''}
       </div>
     `;
     return;
@@ -2277,12 +2440,16 @@ function renderBillCardWithQuickActions(bill, context) {
         <div class="card-quick-actions" onclick="event.stopPropagation()">
           ${bill.deliveryStatus === 'Pending' ? `
             <button class="btn-card-action btn-amber" onclick="quickMarkOutForDelivery('${bill.invoiceNo}')">
-              <i class="fa-solid fa-truck-fast"></i> ${isMyOrder ? 'Start Delivery' : 'Out for Delivery'}
+              <i class="fa-solid fa-motorcycle"></i> ${isMyOrder ? 'Start Route' : 'Out for Delivery'}
             </button>
-          ` : ''}
-          <button class="btn-card-action btn-green" onclick="quickOpenDeliveryProofModal('${bill.invoiceNo}')">
-            <i class="fa-solid fa-camera"></i> Mark Delivered
-          </button>
+            <button class="btn-card-action btn-green btn-deliver-hero" onclick="quickOpenDeliveryProofModal('${bill.invoiceNo}')">
+              <i class="fa-solid fa-camera"></i> Mark Delivered 📸
+            </button>
+          ` : `
+            <button class="btn-card-action btn-green btn-deliver-hero full-width" onclick="quickOpenDeliveryProofModal('${bill.invoiceNo}')">
+              <i class="fa-solid fa-camera"></i> Mark Delivered 📸
+            </button>
+          `}
         </div>
       `;
     }
@@ -2294,20 +2461,28 @@ function renderBillCardWithQuickActions(bill, context) {
       quickActionsHtml = `
         <div class="card-quick-actions" onclick="event.stopPropagation()">
           <button class="btn-card-action btn-success full-width" onclick="quickOpenPaymentModeModal('${bill.invoiceNo}')">
-            <i class="fa-solid fa-circle-dollar-to-slot"></i> Collect Payment (CASH / QR / CARD)
+            <i class="fa-solid fa-circle-dollar-to-slot"></i> Collect Payment (${formatCurrency(bill.billAmount)})
           </button>
         </div>
       `;
     } else {
       quickActionsHtml = `
         <div class="card-quick-actions" onclick="event.stopPropagation()">
-          <span class="text-success text-xs" style="font-weight: 700; grid-column: 1/-1; text-align: center; padding: 4px;">
+          <span class="text-success text-xs" style="font-weight: 700; grid-column: 1/-1; text-align: center; padding: 6px;">
             <i class="fa-solid fa-circle-check"></i> Delivered & Settled via ${bill.paymentMode}
           </span>
         </div>
       `;
     }
   }
+
+  const paymentPillHtml = bill.paymentStatus !== 'Paid'
+    ? `<span class="card-collect-pill pill-unpaid"><i class="fa-solid fa-hand-holding-dollar"></i> Collect ${formatCurrency(bill.billAmount)}</span>`
+    : `<span class="card-collect-pill pill-paid"><i class="fa-solid fa-circle-check"></i> Prepaid (${bill.paymentMode})</span>`;
+
+  const customerNoteHtml = bill.remarks
+    ? `<div class="card-customer-note"><i class="fa-solid fa-note-sticky"></i> <span><strong>Customer Note:</strong> ${bill.remarks}</span></div>`
+    : '';
 
   return `
     <div class="bill-card ${borderClass}" onclick="openBillDetailModal('${bill.invoiceNo}')">
@@ -2316,27 +2491,26 @@ function renderBillCardWithQuickActions(bill, context) {
           <span class="flat-badge">
             <i class="fa-solid fa-building-user text-primary"></i> Flat ${bill.flatNo}
           </span>
-          <span class="invoice-badge">${bill.invoiceNo}</span>
+          <span class="invoice-badge">#${bill.invoiceNo}</span>
         </div>
         <div class="card-amount-box">
           <div class="card-bill-amount">${formatCurrency(bill.billAmount)}</div>
-          ${bill.paymentStatus !== 'Paid' 
-            ? `<span class="card-balance-sub text-danger">UNPAID</span>` 
-            : `<span class="card-balance-sub text-success">PAID (${bill.paymentMode})</span>`
-          }
+          ${paymentPillHtml}
         </div>
       </div>
 
       <div class="card-badges-row">
         ${delBadge}
         ${payBadge}
-        ${agentBadge}
+        ${!isAgent ? agentBadge : ''}
         ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
       </div>
 
+      ${customerNoteHtml}
+
       <div class="card-meta-row">
         <span><i class="fa-regular fa-calendar"></i> ${bill.billedDate}</span>
-        <span>${bill.remarks ? '<i class="fa-solid fa-comment-dots text-primary"></i> Notes' : ''}</span>
+        <span>${bill.deliveryStatus === 'Delivered' ? '<i class="fa-solid fa-circle-check text-success"></i> Completed' : '<i class="fa-solid fa-clock text-warning"></i> Active Run'}</span>
       </div>
 
       ${quickActionsHtml}
@@ -2513,6 +2687,11 @@ function executeReassignAgent(newAgent) {
   const displayEl = document.getElementById('modal-assigned-agent-display');
   if (displayEl) displayEl.textContent = newAgent;
   showToast(`Assigned #${bill.invoiceNo} to ${newAgent}`, 'success');
+
+  if (appState.currentUser?.role === 'agent' && isSameAgent(newAgent, appState.currentUser.agentName)) {
+    playNewOrderAlertSound();
+  }
+
   renderApp();
 }
 
@@ -2719,6 +2898,10 @@ function handleDeliveryProofSubmit(event) {
   bill.deliveryProof = appState.tempDeliveryProofData;
   bill.deliveryProofTime = `${timestamp}${notes ? ` (${notes})` : ''}`;
   bill.lastUpdated = new Date().toISOString();
+
+  if (appState.knownAssignedInvoiceNos) {
+    appState.knownAssignedInvoiceNos.delete(String(bill.invoiceNo).trim());
+  }
 
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
@@ -3433,6 +3616,34 @@ function mergeCloudBills(cloudBills) {
     saveBillsToLocal();
     updateBadgeCounts();
     renderCurrentScreen();
+  }
+
+  // Audio alert and notification for newly assigned deliveries to active delivery agent
+  if (appState.currentUser?.role === 'agent') {
+    const currentAgent = appState.currentUser.agentName;
+    if (!appState.hasInitializedAssignedTracking) {
+      initAgentAssignedTracking();
+    } else {
+      const newlyAssigned = [];
+      appState.bills.forEach(b => {
+        if (b && b.invoiceNo && isSameAgent(b.deliveryAgent, currentAgent) && b.deliveryStatus !== 'Delivered') {
+          const invKey = String(b.invoiceNo).trim();
+          if (!appState.knownAssignedInvoiceNos.has(invKey)) {
+            newlyAssigned.push(b);
+            appState.knownAssignedInvoiceNos.add(invKey);
+          }
+        }
+      });
+
+      if (newlyAssigned.length > 0) {
+        playNewOrderAlertSound();
+        const first = newlyAssigned[0];
+        showToast(`🔔 NEW DELIVERY ALLOCATED: Flat ${first.flatNo} (#${first.invoiceNo}) - ${formatCurrency(first.billAmount)}!`, 'success');
+        if (appState.activeScreen === 'screen-pending-deliveries') {
+          renderPendingDeliveries();
+        }
+      }
+    }
   }
 }
 

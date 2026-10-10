@@ -390,8 +390,8 @@
 
       <!-- ==================== SCREEN 2: PENDING DELIVERIES ==================== -->
       <section id="screen-pending-deliveries" class="app-screen active">
-        <!-- Quick Stats Pill Bar -->
-        <div class="screen-hero-bar">
+        <!-- Store Owner / Operations Hero Bar (Shown for Owner & Ops) -->
+        <div class="screen-hero-bar" id="store-delivery-hero-bar">
           <div class="hero-stat-card bg-amber-gradient">
             <div class="hero-stat-info">
               <span class="hero-stat-label" id="hero-delivery-label">Pending Deliveries</span>
@@ -407,13 +407,38 @@
           </div>
         </div>
 
-        <!-- Agent Specific Banner (Shown for Delivery Agent) -->
-        <div id="agent-active-banner" class="agent-banner-box hidden">
-          <div class="agent-banner-info">
-            <i class="fa-solid fa-person-biking text-primary"></i>
-            <div>
-              <strong id="agent-active-name">Rahul Sharma's Route</strong>
-              <small class="block-hint" id="agent-task-count">Showing only orders assigned to you</small>
+        <!-- Dedicated Delivery Agent Dashboard (Shown when Delivery Agent logs in) -->
+        <div id="agent-delivery-dashboard" class="agent-dashboard-wrapper hidden">
+          <div class="agent-dashboard-header">
+            <div class="agent-dashboard-user">
+              <div class="agent-dashboard-avatar">
+                <i class="fa-solid fa-person-biking"></i>
+              </div>
+              <div class="agent-dashboard-titles">
+                <h3 id="agent-dash-name">My Delivery Route</h3>
+                <p id="agent-dash-duty-status"><span class="status-dot dot-green"></span> Active On Duty</p>
+              </div>
+            </div>
+            <div class="agent-dashboard-actions">
+              <button type="button" class="btn-test-sound" onclick="playNewOrderAlertSound(); showToast('🔔 Alert Sound Tested OK!', 'info');" title="Test Notification Chime">
+                <i class="fa-solid fa-volume-high"></i> Sound On
+              </button>
+            </div>
+          </div>
+
+          <!-- 3 High Visibility KPIs -->
+          <div class="agent-dashboard-kpis">
+            <div class="agent-kpi-card kpi-accent-purple">
+              <div class="agent-kpi-val" id="agent-kpi-assigned">0</div>
+              <div class="agent-kpi-lbl">Allocated</div>
+            </div>
+            <div class="agent-kpi-card kpi-accent-amber">
+              <div class="agent-kpi-val" id="agent-kpi-cash">₹0</div>
+              <div class="agent-kpi-lbl">To Collect</div>
+            </div>
+            <div class="agent-kpi-card kpi-accent-green">
+              <div class="agent-kpi-val" id="agent-kpi-delivered">0</div>
+              <div class="agent-kpi-lbl">Done Today</div>
             </div>
           </div>
         </div>

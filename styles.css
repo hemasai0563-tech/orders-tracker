@@ -3721,4 +3721,204 @@ body.theme-light .btn-open-flat-stmt {
   border: 1px solid rgba(0, 229, 255, 0.3);
 }
 
+/* --------------------------------------------------------------------------
+   AGENT DELIVERY DASHBOARD (MODERN, ATTRACTIVE & HIGH CONTRAST)
+   -------------------------------------------------------------------------- */
+.agent-dashboard-wrapper {
+  background: linear-gradient(135deg, rgba(24, 24, 27, 0.98), rgba(39, 39, 42, 0.95));
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 10px 28px -6px rgba(0, 0, 0, 0.45);
+  position: relative;
+  overflow: hidden;
+}
+
+.agent-dashboard-wrapper::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 140px;
+  height: 140px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.28) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.agent-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.agent-dashboard-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.agent-dashboard-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a855f7, #6366f1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 20px;
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.4);
+}
+
+.agent-dashboard-titles h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-heading);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-dashboard-titles p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 2px 0 0 0;
+}
+
+.agent-dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-test-sound {
+  background: rgba(168, 85, 247, 0.18);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #d8b4fe;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.btn-test-sound:hover {
+  background: rgba(168, 85, 247, 0.35);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.agent-dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.agent-kpi-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 10px 8px;
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.agent-kpi-card.kpi-accent-purple {
+  background: linear-gradient(180deg, rgba(168, 85, 247, 0.15), rgba(168, 85, 247, 0.04));
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.agent-kpi-card.kpi-accent-amber {
+  background: linear-gradient(180deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.04));
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.agent-kpi-card.kpi-accent-green {
+  background: linear-gradient(180deg, rgba(16, 185, 129, 0.15), rgba(16, 185, 129, 0.04));
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.agent-kpi-val {
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--text-heading);
+  line-height: 1.2;
+}
+
+.agent-kpi-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* Customer notes callout inside order card */
+.card-customer-note {
+  background: rgba(245, 158, 11, 0.14);
+  border-left: 3px solid #f59e0b;
+  border-radius: 4px;
+  padding: 7px 11px;
+  margin: 9px 0;
+  font-size: 12.5px;
+  color: #fbbf24;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  line-height: 1.4;
+}
+
+.card-collect-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+}
+.card-collect-pill.pill-unpaid {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+.card-collect-pill.pill-paid {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+/* Full width large delivery button */
+.btn-card-action.btn-green.btn-deliver-hero {
+  background: linear-gradient(135deg, #059669, #10b981) !important;
+  color: #fff !important;
+  font-size: 14.5px !important;
+  font-weight: 800 !important;
+  padding: 13px 18px !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.38) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
+}
+
+.btn-card-action.btn-green.btn-deliver-hero:hover {
+  background: linear-gradient(135deg, #047857, #059669) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.48) !important;
+}
+
+
 
