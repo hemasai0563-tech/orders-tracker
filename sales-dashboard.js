@@ -1542,11 +1542,11 @@ function renderOverviewTab() {
   const elDeadVal = document.getElementById('ov-kpi-dead-stock-value');
   const badgeNoMove = document.getElementById('badge-count-no-movement');
 
-  if (elSalesVal) elSalesVal.textContent = formatINR(totalSalesVal);
+  if (elSalesVal) elSalesVal.innerHTML = formatKpiCurrency(totalSalesVal);
   if (elQtySold) elQtySold.textContent = formatIndianNumber(Math.round(totalQtySold));
   if (elItemsSold) elItemsSold.textContent = formatIndianNumber(distinctItemsCount);
   if (elNoMoveCount) elNoMoveCount.textContent = formatIndianNumber(noMovementCount);
-  if (elDeadVal) elDeadVal.textContent = formatINR(deadStockTotalValue);
+  if (elDeadVal) elDeadVal.innerHTML = formatKpiCurrency(deadStockTotalValue);
   if (badgeNoMove) badgeNoMove.textContent = noMovementCount;
 
   // 2. Top 20 by Sales Value
@@ -1645,14 +1645,29 @@ function renderTop10ItemsChart(top10Items) {
   if (!container || top10Items.length === 0) return;
 
   const maxVal = top10Items[0].amount || 1;
+  const medals = ['🥇', '🥈', '🥉'];
+
   container.innerHTML = top10Items.map((item, idx) => {
-    const widthPct = Math.max(8, Math.min(100, Math.round((item.amount / maxVal) * 100)));
+    const widthPct = Math.max(12, Math.min(100, Math.round((item.amount / maxVal) * 100)));
+    const rankBadge = idx < 3 
+      ? `<span class="chart-rank-medal medal-${idx+1}">${medals[idx]}</span>`
+      : `<span class="chart-rank-num">#${idx + 1}</span>`;
+
     return `
-      <div class="horiz-chart-row">
-        <span class="horiz-chart-label" title="${escapeHTML(item.itemName)}">#${idx + 1} ${escapeHTML(item.itemName)}</span>
+      <div class="horiz-chart-row" title="${escapeHTML(item.itemName)} - ${formatINR(item.amount)} (${item.quantity} ${item.itemUnit || ''})">
+        <div class="horiz-chart-meta">
+          ${rankBadge}
+          <div class="chart-label-group">
+            <span class="horiz-chart-label">${escapeHTML(item.itemName)}</span>
+            <span class="chart-sub-tag">${escapeHTML(item.categoryName || item.itemUnit || '')}</span>
+          </div>
+        </div>
         <div class="horiz-chart-track">
-          <div class="horiz-chart-bar" style="width: ${widthPct}%;"></div>
-          <span class="horiz-chart-val">${formatINR(item.amount)}</span>
+          <div class="horiz-chart-bar gradient-bar-${(idx % 3) + 1}" style="width: ${widthPct}%;"></div>
+          <div class="horiz-chart-val-box">
+            <span class="horiz-chart-val">${formatINR(item.amount)}</span>
+            <span class="horiz-chart-qty-pill">${formatIndianNumber(item.quantity)} ${item.itemUnit || ''}</span>
+          </div>
         </div>
       </div>
     `;
@@ -1724,7 +1739,7 @@ function renderBrandsTab() {
   const elTopShare = document.getElementById('br-kpi-top-share');
   const elTopBrandName = document.getElementById('br-kpi-top-brand-name');
 
-  if (elNetSales) elNetSales.textContent = formatINR(totalNetSales);
+  if (elNetSales) elNetSales.innerHTML = formatKpiCurrency(totalNetSales);
   if (elTotalQty) elTotalQty.textContent = formatIndianNumber(Math.round(totalNetQty));
   if (elBrandCount) elBrandCount.textContent = formatIndianNumber(brandCount);
   if (elTopShare) elTopShare.textContent = topBrandShare.toFixed(1) + '%';
@@ -1798,15 +1813,30 @@ function renderTop10BrandsChart(top10Brands, totalNetSales) {
   if (!container || top10Brands.length === 0) return;
 
   const maxVal = top10Brands[0].netSaleAmount || 1;
+  const medals = ['🥇', '🥈', '🥉'];
+
   container.innerHTML = top10Brands.map((b, idx) => {
-    const widthPct = Math.max(8, Math.min(100, Math.round((b.netSaleAmount / maxVal) * 100)));
+    const widthPct = Math.max(12, Math.min(100, Math.round((b.netSaleAmount / maxVal) * 100)));
     const share = totalNetSales > 0 ? ((b.netSaleAmount / totalNetSales) * 100).toFixed(1) : '0.0';
+    const rankBadge = idx < 3 
+      ? `<span class="chart-rank-medal medal-${idx+1}">${medals[idx]}</span>`
+      : `<span class="chart-rank-num">#${idx + 1}</span>`;
+
     return `
-      <div class="horiz-chart-row">
-        <span class="horiz-chart-label" title="${escapeHTML(b.brand)}">#${idx + 1} ${escapeHTML(b.brand)}</span>
+      <div class="horiz-chart-row" title="${escapeHTML(b.brand)} - ${formatINR(b.netSaleAmount)} (${share}%)">
+        <div class="horiz-chart-meta">
+          ${rankBadge}
+          <div class="chart-label-group">
+            <span class="horiz-chart-label">${escapeHTML(b.brand)}</span>
+            <span class="chart-sub-tag">${b.itemsSold || 0} Products</span>
+          </div>
+        </div>
         <div class="horiz-chart-track">
-          <div class="horiz-chart-bar" style="width: ${widthPct}%; background: linear-gradient(90deg, #7c3aed, #a855f7);"></div>
-          <span class="horiz-chart-val">${formatINR(b.netSaleAmount)} (${share}%)</span>
+          <div class="horiz-chart-bar gradient-bar-${(idx % 3) + 1}" style="width: ${widthPct}%;"></div>
+          <div class="horiz-chart-val-box">
+            <span class="horiz-chart-val">${formatINR(b.netSaleAmount)}</span>
+            <span class="horiz-chart-qty-pill">${share}% share</span>
+          </div>
         </div>
       </div>
     `;
@@ -1856,7 +1886,7 @@ function renderNoMovementTab() {
   const elTotalCount = document.getElementById('nm-total-unsold-count');
   const elStatusPill = document.getElementById('nm-filter-status-pill');
 
-  if (elTotalVal) elTotalVal.textContent = formatINR(totalDeadValue);
+  if (elTotalVal) elTotalVal.innerHTML = formatKpiCurrency(totalDeadValue);
   if (elTotalCount) elTotalCount.textContent = formatIndianNumber(totalUnsoldCount);
   if (elStatusPill) {
     elStatusPill.textContent = salesState.settings.onlyStockGreaterThanZero ? 'Stock > 0 Only: Active' : 'All Stock Records: Active';
@@ -2719,9 +2749,21 @@ function exportTableData(tableId, filename, format = 'excel') {
 // ==========================================================================
 // 15. FORMATTING HELPERS
 // ==========================================================================
-function formatINR(amount) {
+function formatINR(amount, forceDecimals = false) {
   const num = Number(amount) || 0;
+  if (!forceDecimals && Math.abs(num % 1) < 0.005) {
+    return '₹' + formatIndianNumber(Math.round(num).toString());
+  }
   return '₹' + formatIndianNumber(num.toFixed(2));
+}
+
+function formatKpiCurrency(amount) {
+  const num = Number(amount) || 0;
+  if (Math.abs(num % 1) < 0.005) {
+    return `<span class="kpi-curr-symbol">₹</span>${formatIndianNumber(Math.round(num).toString())}`;
+  }
+  const [intPart, decPart] = num.toFixed(2).split('.');
+  return `<span class="kpi-curr-symbol">₹</span>${formatIndianNumber(intPart)}<span class="kpi-curr-dec">.${decPart}</span>`;
 }
 
 function formatIndianNumber(numStr) {

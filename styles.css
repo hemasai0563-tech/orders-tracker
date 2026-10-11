@@ -236,22 +236,23 @@ body.theme-light ::-webkit-scrollbar-thumb {
 
 @media (min-width: 900px) {
   .app-container {
-    max-width: 920px;
+    max-width: 95%;
+    width: 95%;
     height: 96vh;
   }
 }
 
-@media (min-width: 1100px) {
+@media (min-width: 1200px) {
   .app-container {
-    max-width: 1180px;
-    height: 96vh;
+    max-width: 1380px;
+    height: 97vh;
   }
 }
 
-@media (min-width: 1300px) {
+@media (min-width: 1500px) {
   .app-container {
-    max-width: 1260px;
-    height: 96vh;
+    max-width: 1440px;
+    height: 97vh;
   }
 }
 
@@ -4260,44 +4261,77 @@ body.theme-light .btn-open-flat-stmt {
 /* KPI Grids */
 .sales-kpi-grid-5 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
 }
 
 .sales-kpi-grid-4 {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+@media (min-width: 1100px) {
+  .sales-kpi-grid-5 {
+    grid-template-columns: repeat(5, 1fr) !important;
+  }
+  .sales-kpi-grid-4 {
+    grid-template-columns: repeat(4, 1fr) !important;
+  }
 }
 
 .sales-kpi-box {
+  position: relative;
   background: #ffffff;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 16px 18px;
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-  transition: transform 0.2s ease;
+  gap: 14px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
 }
 
+.sales-kpi-box::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: #cbd5e1;
+}
+
+.sales-kpi-box.kpi-box-emerald::after { background: linear-gradient(90deg, #059669, #34d399); }
+.sales-kpi-box.kpi-box-blue::after { background: linear-gradient(90deg, #0284c7, #38bdf8); }
+.sales-kpi-box.kpi-box-purple::after { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+.sales-kpi-box.kpi-box-amber::after { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.sales-kpi-box.kpi-box-red::after { background: linear-gradient(90deg, #dc2626, #f87171); }
+
 .sales-kpi-box:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.1);
+  border-color: #cbd5e1;
 }
 
 .sales-kpi-box .sales-kpi-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 20px;
   flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.sales-kpi-box:hover .sales-kpi-icon {
+  transform: scale(1.08);
 }
 
 .sales-kpi-box.kpi-box-emerald .sales-kpi-icon { background: #ecfdf5; color: #059669; }
@@ -4308,30 +4342,51 @@ body.theme-light .btn-open-flat-stmt {
 
 .sales-kpi-details {
   min-width: 0;
+  flex: 1;
 }
 
 .sales-kpi-label {
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.5px;
   color: var(--text-muted);
 }
 
 .sales-kpi-details h3 {
-  font-size: 20px;
+  font-size: clamp(17px, 1.35vw, 22px);
   font-weight: 800;
   color: var(--text-heading);
-  line-height: 1.2;
-  margin: 4px 0 2px 0;
-  font-family: 'JetBrains Mono', monospace;
+  line-height: 1.25;
+  margin: 6px 0 3px 0;
+  font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  letter-spacing: -0.4px;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
   white-space: nowrap;
 }
 
+.kpi-curr-symbol {
+  font-size: 0.82em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-right: 1px;
+}
+
+.kpi-curr-dec {
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--text-light);
+  opacity: 0.85;
+}
+
 .sales-kpi-sub {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-light);
   font-weight: 600;
+  line-height: 1.3;
+  display: block;
 }
 
 /* Table Responsive Wrapper */
@@ -4467,59 +4522,128 @@ body.theme-light .btn-open-flat-stmt {
   font-family: 'JetBrains Mono', monospace;
 }
 
-/* Charts */
+/* Modern Interactive Charts */
 .chart-container {
-  padding: 10px 0;
+  padding: 12px 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .horiz-chart-row {
   display: flex;
   align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.horiz-chart-row:hover {
+  background: #f8fafc;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.horiz-chart-meta {
+  width: 220px;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
   gap: 10px;
-  font-size: 12px;
+}
+
+.chart-rank-medal {
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+}
+
+.chart-rank-num {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-light);
+  width: 26px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.chart-label-group {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .horiz-chart-label {
-  width: 140px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 700;
   color: var(--text-heading);
+  font-size: 12.5px;
+}
+
+.chart-sub-tag {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .horiz-chart-track {
   flex: 1;
-  height: 24px;
+  height: 32px;
   background: #f1f5f9;
-  border-radius: 6px;
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
   display: flex;
   align-items: center;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .horiz-chart-bar {
   height: 100%;
-  background: linear-gradient(90deg, #059669, #10b981);
-  border-radius: 6px;
-  transition: width 0.4s ease;
+  border-radius: 8px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 
-.horiz-chart-bar.bar-drop {
-  background: linear-gradient(90deg, #dc2626, #f87171);
+.gradient-bar-1 { background: linear-gradient(90deg, #059669 0%, #10b981 100%); }
+.gradient-bar-2 { background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%); }
+.gradient-bar-3 { background: linear-gradient(90deg, #7c3aed 0%, #a855f7 100%); }
+.horiz-chart-bar.bar-drop { background: linear-gradient(90deg, #dc2626 0%, #f87171 100%); }
+.horiz-chart-bar.bar-growth { background: linear-gradient(90deg, #059669 0%, #34d399 100%); }
+
+.horiz-chart-val-box {
+  position: absolute;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 2;
 }
 
 .horiz-chart-val {
-  position: absolute;
-  right: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 800;
   color: var(--text-heading);
-  font-family: 'JetBrains Mono', monospace;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 2px 7px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.horiz-chart-qty-pill {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-muted);
 }
 
 /* No Movement Banner */
