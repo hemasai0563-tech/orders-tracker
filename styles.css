@@ -5070,15 +5070,16 @@ body.theme-light .btn-open-flat-stmt {
    25. SPIRITED NEW DELIVERY ALERT & RINGING BELL MODAL
    -------------------------------------------------------------------------- */
 .alert-order-overlay {
+  position: fixed;
+  inset: 0;
   z-index: 1200;
   display: none;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.78);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgba(15, 23, 42, 0.82);
   padding: 16px;
-  animation: fadeIn 0.2s ease;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 
 .alert-order-overlay.active {
@@ -5091,21 +5092,23 @@ body.theme-light .btn-open-flat-stmt {
   max-width: 440px;
   background: #ffffff;
   border-radius: 28px;
-  padding: 28px 22px 24px 22px;
-  box-shadow: 0 30px 70px -15px rgba(15, 23, 42, 0.45), 0 0 0 1px rgba(16, 185, 129, 0.2);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  animation: alertPopIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  padding: 26px 20px 22px 20px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   text-align: center;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  animation: alertFadeUp 0.25s ease-out;
 }
 
-@keyframes alertPopIn {
+@keyframes alertFadeUp {
   0% {
-    transform: scale(0.8) translateY(24px);
     opacity: 0;
+    transform: translateY(16px);
   }
   100% {
-    transform: scale(1) translateY(0);
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -5340,7 +5343,10 @@ body.theme-light .btn-open-flat-stmt {
   height: 100%;
   background: linear-gradient(90deg, #10b981 0%, #059669 100%);
   border-radius: 99px;
-  transition: width 0.1s linear;
+  transform-origin: left center;
+  transform: scaleX(1);
+  will-change: transform;
+  transition: transform 0.1s linear;
 }
 
 /* Acceptance Button */

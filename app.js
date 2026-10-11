@@ -201,8 +201,16 @@ function playNewOrderAlertSound() {
  * Starts continuous spirited ringing bell for up to 10 seconds until user accepts.
  */
 function startOrderAlertRingAndModal(order, durationSeconds = 10) {
+  if (!order) return;
+  // Prevent duplicate trigger / screen fluctuation if already showing this order
+  if (isOrderAlertActive && currentAlertOrder?.invoiceNo === order.invoiceNo) {
+    return;
+  }
   currentAlertOrder = order;
   isOrderAlertActive = true;
+
+  // Dispatch lock-screen native system notification (for when phone is locked or out of app)
+  dispatchNativeLockScreenNotification(order);
 
   // 1. Populate Modal UI
   const modal = document.getElementById('new-delivery-alert-modal');
@@ -236,7 +244,7 @@ function startOrderAlertRingAndModal(order, durationSeconds = 10) {
   }
 
   if (statusEl) statusEl.textContent = 'Spirited buzzer ringing...';
-  if (progressBar) progressBar.style.width = '100%';
+  if (progressBar) progressBar.style.transform = 'scaleX(1)';
   if (countdownNum) countdownNum.textContent = `${durationSeconds}s`;
 
   modal.classList.add('active');
@@ -251,15 +259,15 @@ function startOrderAlertRingAndModal(order, durationSeconds = 10) {
     }
   }, 1150);
 
-  // 3. Smooth 10-Second Countdown Progress Bar
+  // 3. Smooth 10-Second Countdown Progress Bar (scaleX for zero repaint fluctuation)
   const totalMs = durationSeconds * 1000;
   let remainingMs = totalMs;
   const updateInterval = 100;
 
   orderAlertCountdownTimer = setInterval(() => {
     remainingMs = Math.max(0, remainingMs - updateInterval);
-    const pct = (remainingMs / totalMs) * 100;
-    if (progressBar) progressBar.style.width = `${pct}%`;
+    const fraction = remainingMs / totalMs;
+    if (progressBar) progressBar.style.transform = `scaleX(${fraction})`;
     if (countdownNum) countdownNum.textContent = `${Math.ceil(remainingMs / 1000)}s`;
 
     if (remainingMs <= 0) {
@@ -269,7 +277,7 @@ function startOrderAlertRingAndModal(order, durationSeconds = 10) {
       stopNewOrderAlertRing(false);
       if (statusEl) statusEl.textContent = 'Buzzer stopped • Tap to accept';
       if (countdownNum) countdownNum.textContent = '0s';
-      if (progressBar) progressBar.style.width = '0%';
+      if (progressBar) progressBar.style.transform = 'scaleX(0)';
     }
   }, updateInterval);
 }
@@ -358,6 +366,87 @@ function testSpiritedOrderAlert() {
   showToast('🔔 10-Second Spirited Delivery Buzzer Activated!', 'info');
 }
 
+/**
+ * Dispatches a native system lock-screen notification with vibration and alert sound
+ * so delivery agents receive the notification even when their phone is locked or app is closed/in background.
+ */
+async function dispatchNativeLockScreenNotification(order) {
+  if (!order || !('Notification' in window)) return;
+
+  if (Notification.permission !== 'granted') {
+    try {
+      await Notification.requestPermission();
+    } catch (e) {}
+  }
+
+  if (Notification.permission === 'granted') {
+    const title = `🚨 NEW ORDER: Flat ${order.flatNo} (${formatCurrency(order.billAmount || 0)})`;
+    const options = {
+      body: `Order #${order.invoiceNo} allocated! Tap to open app and accept delivery.`,
+      icon: 'logo.png',
+      badge: 'logo.png',
+      tag: `delivery-order-${order.invoiceNo}`,
+      renotify: true,
+      requireInteraction: true, // Remains on mobile lock-screen until tapped!
+      vibrate: [400, 150, 400, 150, 600],
+      data: { invoiceNo: order.invoiceNo }
+    };
+
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.showNotification) {
+          await reg.showNotification(title, options);
+          return;
+        }
+      } catch (swErr) {
+        console.warn('Service worker showNotification fallback:', swErr);
+      }
+    }
+
+    try {
+      new Notification(title, options);
+    } catch (err) {
+      console.warn('Standard notification fallback error:', err);
+    }
+  }
+}
+
+function requestNotificationPermissionIfNeeded() {
+  if ('Notification' in window) {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          showToast('🔔 Lock-screen notifications enabled! You will get alerts when screen is locked.', 'success');
+        }
+      }).catch(() => {});
+    }
+  }
+}
+
+function initServiceWorkerAndNotifications() {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => {
+        console.log('Service Worker registered successfully:', reg.scope);
+      })
+      .catch(err => {
+        console.warn('Service Worker registration error:', err);
+      });
+
+    navigator.serviceWorker.addEventListener('message', event => {
+      if (event.data && event.data.type === 'FOCUS_DELIVERY_ORDER') {
+        switchScreen('deliveries');
+        const inv = event.data.invoiceNo;
+        if (inv) {
+          const bill = appState.bills.find(b => b.invoiceNo === inv);
+          if (bill) startOrderAlertRingAndModal(bill, 10);
+        }
+      }
+    });
+  }
+}
+
 function initAgentAssignedTracking() {
   if (appState.currentUser?.role !== 'agent') return;
   const agentName = appState.currentUser.agentName;
@@ -376,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSavedData();
   initAuthSession();
   initDeviceLocationEngine();
+  initServiceWorkerAndNotifications();
   if (typeof initSalesDashboard === 'function') {
     initSalesDashboard();
   }
@@ -661,6 +751,7 @@ function initAuthSession() {
 
       // Attendance check and assignment tracking for logged-in delivery agents
       if (appState.currentUser.role === 'agent') {
+        requestNotificationPermissionIfNeeded();
         initAgentAssignedTracking();
         if (!isAgentOnDuty()) {
           navigateToScreen('screen-attendance');
@@ -876,6 +967,7 @@ function handleLogin(event) {
 
   // Enforce attendance first for delivery agents
   if (user.role === 'agent') {
+    requestNotificationPermissionIfNeeded();
     initAgentAssignedTracking();
     if (!isAgentOnDuty(agentName)) {
       navigateToScreen('screen-attendance');
@@ -3567,12 +3659,12 @@ function initCloudSyncEngine() {
     fetchBillsFromCloud(true);
   }
 
-  // Periodic fast background polling (every 2.5 seconds)
+  // Periodic fast background polling (works continuously even when phone is locked or app is minimized)
   cloudSyncTimer = setInterval(() => {
-    if (appState.apiUrl && !document.hidden && !appState.isSyncing) {
+    if (appState.apiUrl && !appState.isSyncing) {
       fetchBillsFromCloud(true);
     }
-  }, 2500);
+  }, 3000);
 
   // Sync immediately when tab/app becomes visible or focused (e.g. phone screen unlock)
   document.addEventListener('visibilitychange', () => {
@@ -3812,7 +3904,9 @@ function mergeCloudBills(cloudBills) {
     recalculateAllBills();
     saveBillsToLocal();
     updateBadgeCounts();
-    renderCurrentScreen();
+    if (!isOrderAlertActive) {
+      renderCurrentScreen();
+    }
   }
 
   // Audio alert and notification for newly assigned deliveries to active delivery agent
@@ -3836,7 +3930,7 @@ function mergeCloudBills(cloudBills) {
         const first = newlyAssigned[0];
         startOrderAlertRingAndModal(first, 10);
         showToast(`🔔 NEW MISSION ALLOCATED: Flat ${first.flatNo} (#${first.invoiceNo}) - ${formatCurrency(first.billAmount)}!`, 'success');
-        if (appState.activeScreen === 'screen-pending-deliveries') {
+        if (appState.activeScreen === 'screen-pending-deliveries' && !isOrderAlertActive) {
           renderPendingDeliveries();
         }
       }
