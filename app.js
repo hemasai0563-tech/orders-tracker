@@ -2403,7 +2403,10 @@ function renderSingleBillCardHtml(bill) {
         ${delBadge}
         ${payBadge}
         ${agentBadge}
-        ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
+        ${bill.deliveryProof ? `
+          <button type="button" class="badge badge-green badge-proof-btn" onclick="event.stopPropagation(); viewDeliveryProofImage('${bill.invoiceNo}')" title="Click to view Delivered Photo">
+            <i class="fa-solid fa-camera"></i> Delivery Proof <i class="fa-solid fa-expand text-xs"></i>
+          </button>` : ''}
       </div>
 
       <div class="card-meta-row">
@@ -2481,8 +2484,8 @@ function renderBillCardWithQuickActions(bill, context) {
   }
 
   const paymentPillHtml = bill.paymentStatus !== 'Paid'
-    ? `<span class="card-collect-pill pill-unpaid"><i class="fa-solid fa-hand-holding-dollar"></i> Collect ${formatCurrency(bill.billAmount)}</span>`
-    : `<span class="card-collect-pill pill-paid"><i class="fa-solid fa-circle-check"></i> Prepaid (${bill.paymentMode})</span>`;
+    ? `<span class="badge badge-red badge-sm"><i class="fa-solid fa-circle-exclamation"></i> UNPAID</span>`
+    : `<span class="badge badge-green badge-sm"><i class="fa-solid fa-circle-check"></i> PAID (${bill.paymentMode})</span>`;
 
   const customerNoteHtml = bill.remarks
     ? `<div class="card-customer-note"><i class="fa-solid fa-note-sticky"></i> <span><strong>Customer Note:</strong> ${bill.remarks}</span></div>`
@@ -2507,7 +2510,10 @@ function renderBillCardWithQuickActions(bill, context) {
         ${delBadge}
         ${payBadge}
         ${!isAgent ? agentBadge : ''}
-        ${bill.deliveryProof ? '<span class="badge badge-green"><i class="fa-solid fa-camera"></i> Delivery Proof</span>' : ''}
+        ${bill.deliveryProof ? `
+          <button type="button" class="badge badge-green badge-proof-btn" onclick="event.stopPropagation(); viewDeliveryProofImage('${bill.invoiceNo}')" title="Click to view Delivered Photo">
+            <i class="fa-solid fa-camera"></i> Delivery Proof <i class="fa-solid fa-expand text-xs"></i>
+          </button>` : ''}
       </div>
 
       ${customerNoteHtml}
@@ -3218,6 +3224,15 @@ function openLightboxModal(imgSrc, title) {
 function closeLightboxModal() {
   const modal = document.getElementById('lightbox-modal');
   if (modal) modal.classList.remove('active');
+}
+
+function viewDeliveryProofImage(invoiceNo) {
+  const bill = appState.bills.find(b => b.invoiceNo === invoiceNo);
+  if (!bill || !bill.deliveryProof) {
+    showToast('No delivery proof photo attached for this invoice.', 'warning');
+    return;
+  }
+  openLightboxModal(bill.deliveryProof, `Delivered Photo Proof: #${bill.invoiceNo} (Flat ${bill.flatNo})`);
 }
 
 // Remarks Edit

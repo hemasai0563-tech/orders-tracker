@@ -173,19 +173,17 @@ html, body {
 }
 
 body {
-  background: 
-    radial-gradient(ellipse 90% 60% at 50% -10%, rgba(5, 150, 105, 0.06) 0%, transparent 70%),
-    radial-gradient(circle at 90% 90%, rgba(2, 132, 199, 0.05) 0%, transparent 60%),
-    var(--bg-app);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background-color: var(--bg-canvas);
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Custom Sleek Scrollbar */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -203,7 +201,7 @@ body.theme-light ::-webkit-scrollbar-thumb {
 }
 
 /* --------------------------------------------------------------------------
-   4. APP SHELL & CONTAINER
+   4. APP SHELL & CONTAINER (FULL VIEWPORT RESPONSIVE)
    -------------------------------------------------------------------------- */
 .app-container {
   display: flex;
@@ -211,60 +209,13 @@ body.theme-light ::-webkit-scrollbar-thumb {
   height: 100vh;
   height: 100dvh;
   width: 100%;
-  max-width: 620px;
-  margin: 0 auto;
+  max-width: 100%;
+  margin: 0;
   position: relative;
   background: var(--bg-canvas);
-  border-left: 1px solid var(--border-color);
-  border-right: 1px solid var(--border-color);
-  box-shadow: var(--shadow-xl);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-@media (min-width: 621px) {
-  .app-container {
-    height: 95vh;
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-    border: 1px solid var(--border-color);
-    box-shadow: 
-      0 0 40px rgba(5, 150, 105, 0.08),
-      0 20px 45px rgba(15, 23, 42, 0.12);
-  }
-}
-
-@media (min-width: 900px) {
-  .app-container {
-    max-width: 95%;
-    width: 95%;
-    height: 96vh;
-  }
-}
-
-@media (min-width: 1200px) {
-  .app-container {
-    max-width: 1380px;
-    height: 97vh;
-  }
-}
-
-@media (min-width: 1500px) {
-  .app-container {
-    max-width: 1440px;
-    height: 97vh;
-  }
-}
-
-@media (max-width: 620px) {
-  body {
-    display: block;
-  }
-  .app-container {
-    max-width: 100%;
-    border: none;
-    border-radius: 0;
-  }
+  border: none;
+  box-shadow: none;
+  overflow: hidden;
 }
 
 /* --------------------------------------------------------------------------
@@ -490,13 +441,28 @@ body.theme-light ::-webkit-scrollbar-thumb {
   font-weight: 800;
 }
 
-@media (max-width: 540px) {
+@media (max-width: 768px) {
+  .app-header {
+    padding: 6px 12px;
+    gap: 6px;
+  }
   .header-actions .sync-status-text {
-    display: none;
+    display: none !important;
   }
   .btn-icon-pill {
-    width: 34px;
-    padding: 0;
+    padding: 6px 8px !important;
+    height: 32px !important;
+    gap: 0 !important;
+  }
+  .user-role-pill span {
+    display: none !important;
+  }
+  .user-role-pill {
+    padding: 6px 8px !important;
+    height: 32px !important;
+  }
+  .outlet-badge {
+    display: none !important;
   }
 }
 
@@ -510,6 +476,25 @@ body.theme-light ::-webkit-scrollbar-thumb {
   padding: 16px 16px calc(var(--bottom-nav-height) + 20px) 16px;
   position: relative;
   -webkit-overflow-scrolling: touch;
+}
+
+@media (min-width: 900px) {
+  .app-main {
+    padding: 24px 36px calc(var(--bottom-nav-height) + 28px) 36px;
+  }
+  .bills-list {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)) !important;
+    gap: 16px !important;
+  }
+  .screen-banner,
+  .dashboard-content,
+  .sales-dashboard-wrapper,
+  .filter-chips-scroll {
+    max-width: 1440px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
 .app-screen {
@@ -1885,7 +1870,20 @@ body.theme-light .chip-date.active {
   z-index: 50;
   backdrop-filter: blur(24px) saturate(180%);
   -webkit-backdrop-filter: blur(24px) saturate(180%);
-  padding: 0 6px;
+  padding: 0 4px;
+}
+
+@media (min-width: 900px) {
+  .bottom-nav {
+    max-width: 860px;
+    margin: 0 auto;
+    left: 0;
+    right: 0;
+    bottom: 12px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 30px rgba(15, 23, 42, 0.12);
+  }
 }
 
 .nav-item {
@@ -1898,11 +1896,119 @@ body.theme-light .chip-date.active {
   gap: 3px;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 8px 6px;
+  padding: 8px 3px;
   transition: all var(--transition-fast);
   position: relative;
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   border-radius: var(--radius-md);
+}
+
+.badge-proof-btn {
+  cursor: pointer;
+  border: 1px solid var(--color-green-border);
+  background: var(--color-green-light);
+  color: #059669;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.badge-proof-btn:hover {
+  background: #059669;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+}
+
+/* Lightbox Photo Viewer */
+.lightbox-overlay {
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 16px;
+}
+
+.lightbox-overlay.active {
+  display: flex;
+}
+
+.lightbox-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 20px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  animation: modalPop 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lightbox-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 12px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  z-index: 10;
+}
+
+.lightbox-close:hover {
+  background: #fee2e2;
+  color: #dc2626;
+  transform: rotate(90deg);
+}
+
+.lightbox-img-wrap {
+  max-width: 100%;
+  max-height: 75vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0f172a;
+}
+
+.lightbox-img-wrap img {
+  max-width: 100%;
+  max-height: 75vh;
+  object-fit: contain;
+  border-radius: 10px;
 }
 
 .nav-item:hover {
