@@ -198,6 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSavedData();
   initAuthSession();
   initDeviceLocationEngine();
+  if (typeof initSalesDashboard === 'function') {
+    initSalesDashboard();
+  }
   renderApp();
   setDefaultBilledDate();
   startShiftTimer();
@@ -1290,7 +1293,9 @@ function navigateToScreen(screenId) {
         titleElem.textContent = 'All Bills';
         break;
       case 'screen-dashboard':
-        titleElem.textContent = 'Dashboard';
+        titleElem.textContent = (typeof salesState !== 'undefined' && salesState.viewMode === 'sales')
+          ? 'Sales Dashboard'
+          : 'Dashboard';
         break;
       case 'screen-settings':
         titleElem.textContent = 'Settings & Sync';
@@ -1330,7 +1335,13 @@ function renderCurrentScreen() {
       renderAllBills();
       break;
     case 'screen-dashboard':
-      renderDashboard();
+      if (typeof salesState !== 'undefined' && salesState.viewMode === 'sales') {
+        if (typeof recalculateSalesDashboard === 'function') {
+          recalculateSalesDashboard();
+        }
+      } else {
+        renderDashboard();
+      }
       break;
     case 'screen-add-bill':
       renderRecentAddedBills();

@@ -24,6 +24,9 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 
+  <!-- SheetJS Library for seamless Excel / CSV parsing and export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -840,24 +843,596 @@
         </div>
 
         <div class="dashboard-content" id="dashboard-content-body">
-          <div class="dashboard-header-banner">
-            <div>
-              <h2>Store Financial Dashboard</h2>
-              <p>Real-time retail billing, collection & delivery KPIs</p>
-            </div>
-            <div class="owner-badge-live">
-              <i class="fa-solid fa-crown text-warning"></i> Owner View
-            </div>
+          <!-- DASHBOARD MODE SWITCHER -->
+          <div class="dash-mode-switcher-bar">
+            <button type="button" class="dash-mode-btn active" id="btn-mode-sales-dash" onclick="switchDashboardViewMode('sales')">
+              <i class="fa-solid fa-chart-pie"></i>
+              <span>Sales & Brand Dashboard</span>
+              <span class="badge badge-primary">Excel Replacement</span>
+            </button>
+            <button type="button" class="dash-mode-btn" id="btn-mode-finance-dash" onclick="switchDashboardViewMode('finance')">
+              <i class="fa-solid fa-file-invoice-dollar"></i>
+              <span>Orders & Collections</span>
+            </button>
           </div>
 
-          <!-- KPI Cards Grid -->
-          <div class="kpi-grid">
-            <div class="kpi-card kpi-blue">
-              <div class="kpi-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
-              <div class="kpi-info">
-                <span class="kpi-title">Total Billed</span>
-                <h3 id="dash-total-billed">₹0</h3>
-                <span class="kpi-sub" id="dash-total-bills-count">0 total invoices</span>
+          <!-- ==================== SALES DASHBOARD ROOT ==================== -->
+          <div id="sales-dashboard-wrapper" class="sales-dashboard-wrapper">
+            <!-- Header Banner -->
+            <div class="sales-dash-header-wrap">
+              <div class="sales-dash-title-row">
+                <div class="sales-dash-titles">
+                  <div class="sales-badge-pill">
+                    <i class="fa-solid fa-bolt text-primary"></i> <span>RAD Retail Intelligence</span>
+                  </div>
+                  <h2>Sales Dashboard</h2>
+                  <div class="sales-period-subtext" id="sales-report-period-caption">
+                    <i class="fa-regular fa-calendar-days text-primary"></i>
+                    <span id="lbl-report-period-text">RAD | Report Period: 01/04/2026 to 31/03/2027</span>
+                  </div>
+                </div>
+                <div class="sales-dash-top-actions">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="openSalesImportModal()" title="Upload or Update Sales, Brand & Stock Files">
+                    <i class="fa-solid fa-cloud-arrow-up text-primary"></i> <span>Upload Reports</span>
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="openSalesSettingsModal()" title="Dashboard Settings & Ignore List">
+                    <i class="fa-solid fa-sliders text-warning"></i> <span>Settings</span>
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="exportCurrentSalesTab('excel')" title="Download Filtered Excel">
+                    <i class="fa-solid fa-file-excel"></i> <span>Excel</span>
+                  </button>
+                  <button type="button" class="btn btn-outline btn-sm" onclick="exportCurrentSalesTab('csv')" title="Download Filtered CSV">
+                    <i class="fa-solid fa-file-csv"></i> <span>CSV</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Global Filters Card (Applies to all tabs) -->
+              <div class="sales-global-filters-card">
+                <div class="filters-grid-row">
+                  <!-- Date Preset Filter -->
+                  <div class="filter-item">
+                    <label><i class="fa-solid fa-calendar"></i> Date Range</label>
+                    <select id="sales-filter-date-preset" onchange="handleSalesDatePresetChange(this.value)">
+                      <option value="today">Today</option>
+                      <option value="last_7_days">Last 7 days</option>
+                      <option value="this_month">This month</option>
+                      <option value="last_month">Last month</option>
+                      <option value="this_fy" selected>This financial year (April to March)</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                  </div>
+
+                  <!-- Custom Date Inputs -->
+                  <div class="filter-item" id="sales-custom-dates-group">
+                    <label><i class="fa-regular fa-calendar-check"></i> From & To</label>
+                    <div class="date-range-inputs">
+                      <input type="date" id="sales-filter-from-date" value="2026-04-01" onchange="handleSalesCustomDateChange()" />
+                      <span class="range-separator">to</span>
+                      <input type="date" id="sales-filter-to-date" value="2027-03-31" onchange="handleSalesCustomDateChange()" />
+                    </div>
+                  </div>
+
+                  <!-- Compare With Mode -->
+                  <div class="filter-item">
+                    <label><i class="fa-solid fa-code-compare text-primary"></i> Compare with</label>
+                    <select id="sales-filter-compare-mode" onchange="handleSalesCompareModeChange(this.value)">
+                      <option value="prev_period" selected>Previous period</option>
+                      <option value="last_year">Same period last year</option>
+                      <option value="custom">Custom range</option>
+                    </select>
+                  </div>
+
+                  <!-- Custom Comparison Dates -->
+                  <div class="filter-item hidden" id="sales-compare-custom-dates-group">
+                    <label><i class="fa-solid fa-clock-rotate-left"></i> Comp. From & To</label>
+                    <div class="date-range-inputs">
+                      <input type="date" id="sales-filter-comp-from-date" onchange="recalculateSalesDashboard()" />
+                      <span class="range-separator">to</span>
+                      <input type="date" id="sales-filter-comp-to-date" onchange="recalculateSalesDashboard()" />
+                    </div>
+                  </div>
+
+                  <!-- Category Multi-Select Filter -->
+                  <div class="filter-item">
+                    <label><i class="fa-solid fa-layer-group"></i> Category</label>
+                    <select id="sales-filter-category" onchange="recalculateSalesDashboard()">
+                      <option value="all">All Categories</option>
+                    </select>
+                  </div>
+
+                  <!-- Brand Multi-Select Filter -->
+                  <div class="filter-item">
+                    <label><i class="fa-solid fa-tag"></i> Brand</label>
+                    <select id="sales-filter-brand" onchange="recalculateSalesDashboard()">
+                      <option value="all">All Brands</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4 Sub-Tabs Navigation Bar -->
+              <div class="sales-dash-tabs-bar">
+                <button type="button" class="sales-tab-pill active" id="tab-btn-overview" onclick="switchSalesTab('overview')">
+                  <i class="fa-solid fa-table-cells-large"></i> <span>Overview</span>
+                </button>
+                <button type="button" class="sales-tab-pill" id="tab-btn-brands" onclick="switchSalesTab('brands')">
+                  <i class="fa-solid fa-tags"></i> <span>Brands</span>
+                </button>
+                <button type="button" class="sales-tab-pill" id="tab-btn-no-movement" onclick="switchSalesTab('no-movement')">
+                  <i class="fa-solid fa-box-archive"></i> <span>No Movement</span>
+                  <span class="pill-counter" id="badge-count-no-movement">0</span>
+                </button>
+                <button type="button" class="sales-tab-pill" id="tab-btn-sale-drop" onclick="switchSalesTab('sale-drop')">
+                  <i class="fa-solid fa-chart-line-down"></i> <span>Sale Drop</span>
+                  <span class="pill-counter counter-red" id="badge-count-sale-drop">0</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ==================== TAB 1: OVERVIEW ==================== -->
+            <div id="sales-tab-content-overview" class="sales-tab-pane active">
+              <!-- 5 Overview KPI Cards -->
+              <div class="sales-kpi-grid-5">
+                <div class="sales-kpi-box kpi-box-emerald">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-indian-rupee-sign"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Total Sales Value</span>
+                    <h3 id="ov-kpi-sales-value">₹0</h3>
+                    <span class="sales-kpi-sub">Before tax (sum of amount)</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-blue">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-cubes"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Total Quantity Sold</span>
+                    <h3 id="ov-kpi-total-qty">0</h3>
+                    <span class="sales-kpi-sub">Mixed units (KG, PCS, BOX, BTL)</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-purple">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-barcode"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Number of Items Sold</span>
+                    <h3 id="ov-kpi-items-sold">0</h3>
+                    <span class="sales-kpi-sub">Unique SKU products</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-amber">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-box-open"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">No-Movement Items</span>
+                    <h3 id="ov-kpi-no-movement-count">0</h3>
+                    <span class="sales-kpi-sub" id="ov-kpi-no-movement-sub">Stock &gt; 0 with 0 sales</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-red">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-coins"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Dead Stock Value</span>
+                    <h3 id="ov-kpi-dead-stock-value">₹0</h3>
+                    <span class="sales-kpi-sub">Capital tied in dead stock</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top 10 Value Horizontal Bar Chart -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-chart-bar text-primary"></i> Top 10 Items by Sales Value</h4>
+                  <span class="badge badge-primary">Ranked #1 to #10</span>
+                </div>
+                <div id="chart-top-10-items" class="chart-container">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <!-- Table 1: Top 20 Items by Sales Value -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-arrow-up-wide-short text-success"></i> Top 20 Items by Sales Value</h4>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="exportTableData('top-20-value', 'Top_20_Items_By_Value')">
+                    <i class="fa-solid fa-download"></i> Export
+                  </button>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-top-20-value">
+                    <thead>
+                      <tr>
+                        <th style="width: 50px;">Rank</th>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th style="width: 70px;">Unit</th>
+                        <th style="text-align: right; width: 80px;">Qty</th>
+                        <th style="text-align: right; width: 140px;">Sales Value</th>
+                        <th style="text-align: right; width: 110px;">% of Sales</th>
+                        <th style="text-align: center; width: 80px;">Trend</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-top-20-value">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Table 2: Top 20 Items by Quantity Sold -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-boxes-stacked text-primary"></i> Top 20 Items by Quantity Sold</h4>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="exportTableData('top-20-qty', 'Top_20_Items_By_Quantity')">
+                    <i class="fa-solid fa-download"></i> Export
+                  </button>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-top-20-qty">
+                    <thead>
+                      <tr>
+                        <th style="width: 50px;">Rank</th>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th style="width: 70px;">Unit</th>
+                        <th style="text-align: right; width: 100px;">Qty Sold</th>
+                        <th style="text-align: right; width: 130px;">Sales Value</th>
+                        <th style="text-align: right; width: 100px;">% of Sales</th>
+                        <th style="text-align: center; width: 80px;">Trend</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-top-20-qty">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+                <div class="table-caption-note">
+                  <i class="fa-solid fa-circle-info text-primary"></i> Quantity is in each item's own unit, so compare quantity within similar items only.
+                </div>
+              </div>
+            </div>
+
+            <!-- ==================== TAB 2: BRANDS ==================== -->
+            <div id="sales-tab-content-brands" class="sales-tab-pane">
+              <!-- 4 Brand Summary Cards -->
+              <div class="sales-kpi-grid-4">
+                <div class="sales-kpi-box kpi-box-emerald">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-sack-dollar"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Total Net Sales</span>
+                    <h3 id="br-kpi-net-sales">₹0</h3>
+                    <span class="sales-kpi-sub">Before tax (sales less discounts)</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-blue">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-boxes-packing"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Total Quantity</span>
+                    <h3 id="br-kpi-total-qty">0</h3>
+                    <span class="sales-kpi-sub">Sale Qty minus Return Qty</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-purple">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-tags"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Number of Brands</span>
+                    <h3 id="br-kpi-brand-count">0</h3>
+                    <span class="sales-kpi-sub">Active contributing brands</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-amber">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-crown"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Top Brand Share</span>
+                    <h3 id="br-kpi-top-share">0.0%</h3>
+                    <span class="sales-kpi-sub" id="br-kpi-top-brand-name">Leading brand</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Top 10 Brands Chart -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-chart-column text-primary"></i> Top 10 Brands Market Share</h4>
+                  <div class="input-with-icon" style="max-width: 200px;">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="input-brand-search" placeholder="Search brand..." oninput="handleBrandSearch(this.value)" />
+                  </div>
+                </div>
+                <div id="chart-top-10-brands" class="chart-container">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <!-- Main Brands Performance Table -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-ranking-star text-success"></i> All Brands Performance (High to Low)</h4>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="exportTableData('tbl-all-brands', 'Brand_Wise_Sales_Detailed')">
+                    <i class="fa-solid fa-download"></i> Export
+                  </button>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-all-brands">
+                    <thead>
+                      <tr>
+                        <th style="width: 50px;">Rank</th>
+                        <th>Brand</th>
+                        <th style="text-align: right; width: 70px;">Items</th>
+                        <th style="text-align: right; width: 80px;">Qty</th>
+                        <th style="text-align: right; width: 130px;">Net Sales</th>
+                        <th style="text-align: right; width: 90px;">% Share</th>
+                        <th style="text-align: right; width: 100px;">Cumulative %</th>
+                        <th style="text-align: right; width: 90px;">Drop %</th>
+                        <th style="text-align: right; width: 110px;">Gross Profit</th>
+                        <th style="text-align: right; width: 90px;">Margin %</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-all-brands">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Table 2: Top 20 Brands by Quantity -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-cubes-stacked text-primary"></i> Top 20 Brands by Quantity</h4>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-top-20-brands-qty">
+                    <thead>
+                      <tr>
+                        <th style="width: 50px;">Rank</th>
+                        <th>Brand</th>
+                        <th style="text-align: right; width: 100px;">Qty Sold</th>
+                        <th style="text-align: right; width: 140px;">Net Sales</th>
+                        <th style="text-align: right; width: 100px;">% Share</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-top-20-brands-qty">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==================== TAB 3: NO MOVEMENT ==================== -->
+            <div id="sales-tab-content-no-movement" class="sales-tab-pane">
+              <!-- Dead Stock Summary Banner -->
+              <div class="no-movement-summary-banner">
+                <div class="banner-stat-col">
+                  <span class="banner-lbl">Total Dead Stock Value</span>
+                  <h2 id="nm-total-stock-value" class="text-danger">₹0</h2>
+                </div>
+                <div class="banner-stat-col">
+                  <span class="banner-lbl">Total Unsold Items</span>
+                  <h2 id="nm-total-unsold-count">0</h2>
+                </div>
+                <div class="banner-stat-col">
+                  <span class="banner-lbl">Filter Status</span>
+                  <span class="badge badge-neutral" id="nm-filter-status-pill">Stock &gt; 0 Only: Active</span>
+                </div>
+                <div class="banner-action-col">
+                  <button type="button" class="btn btn-outline btn-sm" onclick="openSalesImportModal()">
+                    <i class="fa-solid fa-file-excel text-success"></i> Update Stock List
+                  </button>
+                </div>
+              </div>
+
+              <!-- No Movement Table -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <h4><i class="fa-solid fa-snowflake text-primary"></i> No Movement Stock Items (0 Sales in Period)</h4>
+                  <div class="table-head-actions">
+                    <button type="button" class="btn btn-outline btn-xs" onclick="exportTableData('tbl-no-movement', 'No_Movement_Stock_Report')">
+                      <i class="fa-solid fa-download"></i> Export
+                    </button>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-no-movement">
+                    <thead>
+                      <tr>
+                        <th style="width: 50px;">#</th>
+                        <th>Item Name</th>
+                        <th>Category</th>
+                        <th style="width: 70px;">Unit</th>
+                        <th style="text-align: right; width: 100px; cursor: pointer;" onclick="sortNoMovementTable('qty')">
+                          Stock Qty <i class="fa-solid fa-sort"></i>
+                        </th>
+                        <th style="text-align: right; width: 130px; cursor: pointer;" onclick="sortNoMovementTable('value')">
+                          Stock Value <i class="fa-solid fa-sort-down text-danger"></i>
+                        </th>
+                        <th style="text-align: center; width: 100px;">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-no-movement">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+                <!-- Empty state placeholder if no stock data -->
+                <div id="no-movement-empty-placeholder" class="sales-empty-box hidden">
+                  <i class="fa-solid fa-boxes-packing empty-icon text-muted"></i>
+                  <h3>Add your stock list to see this report</h3>
+                  <p>Upload your latest inventory stock file to identify dead and zero-movement items.</p>
+                  <button type="button" class="btn btn-primary" onclick="openSalesImportModal()">
+                    <i class="fa-solid fa-upload"></i> Import Stock List
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==================== TAB 4: SALE DROP ==================== -->
+            <div id="sales-tab-content-sale-drop" class="sales-tab-pane">
+              <!-- 5 Sale Drop KPI Cards -->
+              <div class="sales-kpi-grid-5">
+                <div class="sales-kpi-box" id="drop-kpi-box-overall">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Overall Sales Change</span>
+                    <h3 id="drop-kpi-overall-pct">0.0%</h3>
+                    <span class="sales-kpi-sub" id="drop-kpi-overall-sub">Current vs Previous</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-red">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Items Dropped</span>
+                    <h3 id="drop-kpi-items-dropped-count">0</h3>
+                    <span class="sales-kpi-sub">Products with lower sales</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-amber">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-tags"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Brands Dropped</span>
+                    <h3 id="drop-kpi-brands-dropped-count">0</h3>
+                    <span class="sales-kpi-sub">Brands with sales drop</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-purple">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Biggest Drop Item</span>
+                    <h4 id="drop-kpi-biggest-item" style="font-size: 15px; font-weight: 800; margin: 4px 0 2px 0;">None</h4>
+                    <span class="sales-kpi-sub text-danger" id="drop-kpi-biggest-item-val">-₹0 (0%)</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-blue">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-fire-burner"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Biggest Drop Brand</span>
+                    <h4 id="drop-kpi-biggest-brand" style="font-size: 15px; font-weight: 800; margin: 4px 0 2px 0;">None</h4>
+                    <span class="sales-kpi-sub text-danger" id="drop-kpi-biggest-brand-val">-₹0 (0%)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filter Bar & Sub-View Switcher -->
+              <div class="dash-card mt-3">
+                <div class="sale-drop-controls-bar">
+                  <!-- Sub-View Switcher -->
+                  <div class="drop-subview-toggle">
+                    <button type="button" class="btn-drop-subview active" id="btn-drop-view-items" onclick="switchSaleDropSubView('items')">
+                      <i class="fa-solid fa-barcode"></i> Items Drop View
+                    </button>
+                    <button type="button" class="btn-drop-subview" id="btn-drop-view-brands" onclick="switchSaleDropSubView('brands')">
+                      <i class="fa-solid fa-tags"></i> Brands Drop View
+                    </button>
+                  </div>
+
+                  <!-- Drop Filters -->
+                  <div class="drop-filters-group">
+                    <div class="drop-input-item">
+                      <label for="input-min-prev-sales">Min. Prev Sales (₹)</label>
+                      <input type="number" id="input-min-prev-sales" value="1000" min="0" step="500" onchange="recalculateSalesDashboard()" />
+                    </div>
+
+                    <div class="drop-input-item">
+                      <label for="select-drop-show-mode">Filter View</label>
+                      <select id="select-drop-show-mode" onchange="recalculateSalesDashboard()">
+                        <option value="drops_only" selected>Show Drops Only (📉)</option>
+                        <option value="all">Show All (Drops & Gains)</option>
+                      </select>
+                    </div>
+
+                    <div class="input-with-icon" style="min-width: 170px;">
+                      <i class="fa-solid fa-magnifying-glass"></i>
+                      <input type="text" id="input-drop-search" placeholder="Search item or brand..." oninput="handleSaleDropSearch(this.value)" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 10 Biggest Drops vs 10 Biggest Gains Chart -->
+                <div class="sale-drop-chart-wrap mt-3">
+                  <div class="chart-header-row">
+                    <h5><i class="fa-solid fa-chart-simple text-danger"></i> 10 Biggest Sales Drops vs Gains (<span id="lbl-drop-chart-type">Items</span>)</h5>
+                    <button type="button" class="btn btn-outline btn-xs" onclick="toggleDropChartType()">
+                      <i class="fa-solid fa-repeat"></i> Switch to <span id="btn-drop-chart-toggle-label">Brands</span>
+                    </button>
+                  </div>
+                  <div id="chart-drop-gains-container" class="chart-container">
+                    <!-- Rendered dynamically -->
+                  </div>
+                </div>
+
+                <!-- Main Drop Table -->
+                <div class="table-responsive mt-3">
+                  <table class="sales-dash-table" id="tbl-sale-drop">
+                    <thead id="thead-sale-drop">
+                      <!-- Rendered dynamically for Items or Brands -->
+                    </thead>
+                    <tbody id="tbody-sale-drop">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+          <!-- ==================== END SALES DASHBOARD ROOT ==================== -->
+
+          <!-- ==================== EXISTING FINANCIAL & ORDERS CONTENT ==================== -->
+          <div id="finance-dashboard-wrapper" class="finance-dashboard-wrapper hidden">
+            <div class="dashboard-header-banner">
+              <div>
+                <h2>Store Orders & Financials</h2>
+                <p>Real-time retail billing, collection & delivery KPIs</p>
+              </div>
+              <div class="owner-badge-live">
+                <i class="fa-solid fa-crown text-warning"></i> Owner View
+              </div>
+            </div>
+
+            <!-- KPI Cards Grid -->
+            <div class="kpi-grid">
+              <div class="kpi-card kpi-blue">
+                <div class="kpi-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                <div class="kpi-info">
+                  <span class="kpi-title">Total Billed</span>
+                  <h3 id="dash-total-billed">₹0</h3>
+                  <span class="kpi-sub" id="dash-total-bills-count">0 total invoices</span>
+                </div>
+              </div>
+
+              <div class="kpi-card kpi-green">
+                <div class="kpi-icon"><i class="fa-solid fa-circle-dollar-to-slot"></i></div>
+                <div class="kpi-info">
+                  <span class="kpi-title">Total Received</span>
+                  <h3 id="dash-total-received">₹0</h3>
+                  <span class="kpi-sub text-success" id="dash-collection-rate">0% Collected</span>
+                </div>
+              </div>
+
+              <div class="kpi-card kpi-red">
+                <div class="kpi-icon"><i class="fa-solid fa-scale-unbalanced"></i></div>
+                <div class="kpi-info">
+                  <span class="kpi-title">Total Outstanding</span>
+                  <h3 id="dash-total-outstanding">₹0</h3>
+                  <span class="kpi-sub text-danger" id="dash-unpaid-bills-count">0 unpaid invoices</span>
+                </div>
+              </div>
+
+              <div class="kpi-card kpi-amber">
+                <div class="kpi-icon"><i class="fa-solid fa-truck-ramp-box"></i></div>
+                <div class="kpi-info">
+                  <span class="kpi-title">Pending Deliveries</span>
+                  <h3 id="dash-pending-deliveries-count">0</h3>
+                  <span class="kpi-sub text-warning" id="dash-delivery-rate">0% Delivered</span>
+                </div>
               </div>
             </div>
 
@@ -946,7 +1521,8 @@
               <!-- Rendered dynamically -->
             </div>
           </div>
-
+          <!-- ==================== END FINANCE DASHBOARD WRAPPER ==================== -->
+        </div>
         </div>
       </section>
 
@@ -1119,12 +1695,12 @@
         <span class="nav-label">All Bills</span>
       </button>
 
-      <button class="nav-item" id="nav-tab-dashboard" data-screen="screen-dashboard" onclick="navigateToScreen('screen-dashboard')">
+      <button class="nav-item" id="nav-tab-dashboard" data-screen="screen-dashboard" onclick="navigateToScreen('screen-dashboard')" title="RAD Sales & Brand Dashboard">
         <div class="nav-icon-wrapper">
-          <i class="fa-solid fa-chart-line"></i>
+          <i class="fa-solid fa-chart-pie"></i>
           <i class="fa-solid fa-crown nav-crown-sub"></i>
         </div>
-        <span class="nav-label">Dashboard</span>
+        <span class="nav-label">Sales Dash</span>
       </button>
 
       <!-- Settings Tab (Visible to Owner ONLY) -->
@@ -1953,6 +2529,160 @@
       </div>
     </div>
 
+    <!-- ==================== SALES REPORT IMPORT & UPLOAD MODAL ==================== -->
+    <div id="sales-import-modal" class="modal-overlay" onclick="closeSalesImportModal(event)">
+      <div class="modal-card modal-lg-custom" onclick="event.stopPropagation()">
+        <div class="modal-header-custom">
+          <div>
+            <h3><i class="fa-solid fa-cloud-arrow-up text-primary"></i> Upload Sales & Stock Reports</h3>
+            <p class="modal-subtext">Import your billing software exports (.csv or .xlsx) directly into the dashboard</p>
+          </div>
+          <button type="button" class="btn-close-modal" onclick="closeSalesImportModal()">&times;</button>
+        </div>
+
+        <div class="modal-body-custom">
+          <!-- 1-Click Instant Preload Banner -->
+          <div class="import-quick-demo-banner">
+            <div>
+              <strong><i class="fa-solid fa-bolt text-warning"></i> Fast Track: Load My Reports Instantly</strong>
+              <p>Immediately populate with the 330+ items and Brand Wise data you provided.</p>
+            </div>
+            <button type="button" class="btn btn-primary btn-sm" onclick="loadUserPastedSampleReports()">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Load My Reports Now
+            </button>
+          </div>
+
+          <!-- 3 File Upload Dropzones -->
+          <div class="import-dropzones-grid">
+            <!-- 1. Sales By Item -->
+            <div class="import-dropzone-card" id="dropzone-sales-item">
+              <div class="dropzone-header">
+                <span class="dropzone-title"><i class="fa-solid fa-barcode text-primary"></i> 1. Sales By Item Report</span>
+                <span class="badge badge-neutral" id="status-badge-sales-item">Not Uploaded</span>
+              </div>
+              <p class="dropzone-hint">Columns: itemName, groupName, categoryName, itemUnit, quantity, discount, amount, totalTax</p>
+              <div class="dropzone-area" onclick="triggerFileInput('file-input-sales-item')" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event, 'sales-item')">
+                <i class="fa-solid fa-file-csv dropzone-icon"></i>
+                <span>Drag & drop CSV/Excel or <strong>Browse</strong></span>
+                <input type="file" id="file-input-sales-item" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelected(event, 'sales-item')" />
+              </div>
+              <div class="file-parsed-info hidden" id="info-sales-item">
+                <span class="file-name" id="name-sales-item"></span>
+                <span class="file-rows" id="rows-sales-item"></span>
+              </div>
+            </div>
+
+            <!-- 2. Brand Wise Sales Detailed -->
+            <div class="import-dropzone-card" id="dropzone-brand-sales">
+              <div class="dropzone-header">
+                <span class="dropzone-title"><i class="fa-solid fa-tags text-purple"></i> 2. Brand Wise Sales Detailed</span>
+                <span class="badge badge-neutral" id="status-badge-brand-sales">Not Uploaded</span>
+              </div>
+              <p class="dropzone-hint">Columns: Brand, No. of Items Sold, Sale Qty, Return Qty, Net Sale Amount, Gross Profit...</p>
+              <div class="dropzone-area" onclick="triggerFileInput('file-input-brand-sales')" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event, 'brand-sales')">
+                <i class="fa-solid fa-file-excel dropzone-icon"></i>
+                <span>Drag & drop CSV/Excel or <strong>Browse</strong></span>
+                <input type="file" id="file-input-brand-sales" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelected(event, 'brand-sales')" />
+              </div>
+              <div class="file-parsed-info hidden" id="info-brand-sales">
+                <span class="file-name" id="name-brand-sales"></span>
+                <span class="file-rows" id="rows-brand-sales"></span>
+              </div>
+            </div>
+
+            <!-- 3. Stock List -->
+            <div class="import-dropzone-card" id="dropzone-stock-list">
+              <div class="dropzone-header">
+                <span class="dropzone-title"><i class="fa-solid fa-boxes-stacked text-warning"></i> 3. Stock List (Inventory)</span>
+                <span class="badge badge-neutral" id="status-badge-stock-list">Not Uploaded</span>
+              </div>
+              <p class="dropzone-hint">Columns: Item Name, Category, Unit, Current Stock Qty, Stock Value</p>
+              <div class="dropzone-area" onclick="triggerFileInput('file-input-stock-list')" ondragover="handleDragOver(event)" ondrop="handleFileDrop(event, 'stock-list')">
+                <i class="fa-solid fa-warehouse dropzone-icon"></i>
+                <span>Drag & drop CSV/Excel or <strong>Browse</strong></span>
+                <input type="file" id="file-input-stock-list" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelected(event, 'stock-list')" />
+              </div>
+              <div class="file-parsed-info hidden" id="info-stock-list">
+                <span class="file-name" id="name-stock-list"></span>
+                <span class="file-rows" id="rows-stock-list"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detected Period Banner -->
+          <div class="import-period-preview-bar mt-3" id="import-period-preview">
+            <i class="fa-solid fa-calendar-check text-success"></i>
+            <span>Detected Period: <strong id="import-detected-period">No files uploaded yet</strong></span>
+          </div>
+
+          <div class="modal-actions-grid mt-3">
+            <button type="button" class="btn btn-outline" onclick="closeSalesImportModal()">
+              Cancel
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-confirm-import" onclick="confirmAndApplyImportedFiles()">
+              <i class="fa-solid fa-check-double"></i> Confirm & Update Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SALES DASHBOARD SETTINGS MODAL ==================== -->
+    <div id="sales-settings-modal" class="modal-overlay" onclick="closeSalesSettingsModal(event)">
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-header-custom">
+          <div>
+            <h3><i class="fa-solid fa-sliders text-warning"></i> Sales Dashboard Settings</h3>
+            <p class="modal-subtext">Configure exclusions, ignore list and dead-stock computation</p>
+          </div>
+          <button type="button" class="btn-close-modal" onclick="closeSalesSettingsModal()">&times;</button>
+        </div>
+
+        <div class="modal-body-custom">
+          <!-- Ignore List -->
+          <div class="form-group">
+            <label for="input-sales-ignore-list">
+              <i class="fa-solid fa-ban text-danger"></i> Ignore List (Items / IDs to exclude)
+            </label>
+            <textarea id="input-sales-ignore-list" rows="3" placeholder="Enter comma-separated item names or IDs, e.g. TEST, DUMMY">TEST</textarea>
+            <div class="form-note-box mt-1">
+              <i class="fa-solid fa-circle-exclamation text-warning"></i>
+              <span><strong>Note:</strong> TEST has 302 bottles and 18,087 in sales, which looks like a test entry. Remove it from the list if it is real.</span>
+            </div>
+          </div>
+
+          <!-- No Movement Toggle -->
+          <div class="form-group mt-3">
+            <label><i class="fa-solid fa-toggle-on text-primary"></i> No Movement Criteria</label>
+            <div class="toggle-card-box">
+              <div>
+                <strong>Count an item as 'no movement' only if stock is greater than 0</strong>
+                <p class="text-muted" style="font-size: 11.5px; margin-top: 2px;">When Yes, items with 0 stock and 0 sales are not flagged as dead inventory.</p>
+              </div>
+              <div class="toggle-switch-wrapper">
+                <input type="checkbox" id="chk-sales-stock-gt-zero" checked />
+                <label for="chk-sales-stock-gt-zero" class="switch-slider"></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sale Drop Min Prev Sales Default -->
+          <div class="form-group mt-3">
+            <label for="input-settings-min-prev-sales"><i class="fa-solid fa-filter text-primary"></i> Default Minimum Previous Sales (₹)</label>
+            <input type="number" id="input-settings-min-prev-sales" value="1000" min="0" step="500" />
+            <span class="block-hint">Threshold below which micro-items with 100% drops are filtered out.</span>
+          </div>
+
+          <div class="modal-actions-grid mt-3">
+            <button type="button" class="btn btn-outline" onclick="closeSalesSettingsModal()">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="saveSalesDashboardSettings()">
+              <i class="fa-solid fa-floppy-disk"></i> Save Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -1960,6 +2690,7 @@
 
   <!-- App Core JavaScript Logic -->
   <script src="google-apps-script.js"></script>
+  <script src="sales-dashboard.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
