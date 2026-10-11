@@ -224,13 +224,34 @@ body.theme-light ::-webkit-scrollbar-thumb {
 
 @media (min-width: 621px) {
   .app-container {
-    height: 94vh;
+    height: 95vh;
     border-radius: var(--radius-xl);
     overflow: hidden;
     border: 1px solid var(--border-color);
     box-shadow: 
       0 0 40px rgba(5, 150, 105, 0.08),
       0 20px 45px rgba(15, 23, 42, 0.12);
+  }
+}
+
+@media (min-width: 900px) {
+  .app-container {
+    max-width: 920px;
+    height: 96vh;
+  }
+}
+
+@media (min-width: 1100px) {
+  .app-container {
+    max-width: 1180px;
+    height: 96vh;
+  }
+}
+
+@media (min-width: 1300px) {
+  .app-container {
+    max-width: 1260px;
+    height: 96vh;
   }
 }
 
@@ -383,6 +404,16 @@ body.theme-light ::-webkit-scrollbar-thumb {
 
 .btn-icon-pill:active {
   transform: scale(0.95);
+}
+
+@media (max-width: 720px) {
+  .header-actions .sync-status-text {
+    display: none;
+  }
+  .btn-icon-pill {
+    padding: 6px 9px;
+    gap: 0;
+  }
 }
 
 .btn-header-logout {
@@ -4303,12 +4334,40 @@ body.theme-light .btn-open-flat-stmt {
   font-weight: 600;
 }
 
+/* Table Responsive Wrapper */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+}
+
+.table-responsive::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 /* Sales Tables */
 .sales-dash-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
+}
+
+#tbl-all-brands,
+#tbl-sale-drop {
+  min-width: 760px;
 }
 
 .sales-dash-table th {
