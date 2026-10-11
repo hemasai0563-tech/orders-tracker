@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#080c14" />
+  <meta name="theme-color" content="#f1f5f9" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>rad. Retail & Fleet Command</title>
   
   <!-- Modern Google Fonts -->
@@ -27,7 +27,7 @@
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="theme-light">
   <div id="app" class="app-container">
 
     <!-- ==================== AUTH / LOGIN OVERLAY ==================== -->
@@ -144,10 +144,10 @@
       </div>
 
       <div class="header-actions">
-        <!-- Quick Theme Toggle (Light / Dark) -->
-        <button id="btn-theme-toggle" class="btn-icon-pill" title="Toggle Light / Dark Theme" onclick="toggleAppTheme()">
+        <!-- Theme Toggle (Hidden - application locked strictly to clean light theme) -->
+        <button id="btn-theme-toggle" class="btn-icon-pill hidden" style="display: none !important;" title="Light Theme" onclick="toggleAppTheme()">
           <i class="fa-solid fa-sun" id="theme-toggle-icon"></i>
-          <span class="sync-status-text" id="theme-toggle-label">Theme</span>
+          <span class="sync-status-text" id="theme-toggle-label">Light</span>
         </button>
 
         <!-- Quick Flat Search Button -->

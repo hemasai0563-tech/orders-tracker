@@ -205,30 +205,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initAppTheme() {
-  const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME) || 'dark';
-  applyTheme(savedTheme);
+  // Pure high-contrast daylight theme permanently enforced
+  localStorage.setItem(STORAGE_KEYS.THEME, 'light');
+  applyTheme('light');
 }
 
 function toggleAppTheme() {
-  const isLight = document.body.classList.contains('theme-light');
-  const nextTheme = isLight ? 'dark' : 'light';
-  applyTheme(nextTheme);
-  localStorage.setItem(STORAGE_KEYS.THEME, nextTheme);
-  showToast(`Switched to ${nextTheme === 'light' ? 'Daylight ☀️' : 'Obsidian Dark 🌙'} theme`, 'info');
+  // Exclusively light theme
+  applyTheme('light');
+  localStorage.setItem(STORAGE_KEYS.THEME, 'light');
 }
 
 function applyTheme(theme) {
+  document.body.classList.add('theme-light');
   const icon = document.getElementById('theme-toggle-icon');
   const label = document.getElementById('theme-toggle-label');
-  if (theme === 'light') {
-    document.body.classList.add('theme-light');
-    if (icon) icon.className = 'fa-solid fa-moon text-primary';
-    if (label) label.textContent = 'Light';
-  } else {
-    document.body.classList.remove('theme-light');
-    if (icon) icon.className = 'fa-solid fa-sun';
-    if (label) label.textContent = 'Dark';
-  }
+  if (icon) icon.className = 'fa-solid fa-sun text-warning';
+  if (label) label.textContent = 'Light';
 }
 
 function loadSavedData() {
