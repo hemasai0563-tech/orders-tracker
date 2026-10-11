@@ -123,61 +123,239 @@ function getAudioContext() {
     } catch (e) {}
   }, { once: false, passive: true });
 });
+// ==========================================
+// 1.1 SPIRITED BUZZER & RINGING BELL ENGINE
+// ==========================================
+let orderAlertSoundInterval = null;
+let orderAlertCountdownTimer = null;
+let orderAlertTimeout = null;
+let currentAlertOrder = null;
+let isOrderAlertActive = false;
 
 /**
- * Plays an unmistakable, energetic multi-tone alert chime (Ding-Dong / Delivery Alert)
- * accompanied by haptic phone vibration.
+ * Plays a funny, cheerful, spirited delivery buzzer fanfare with cheerful bicycle bell pings.
+ * High energy, motivating, playful and impossible to ignore!
  */
-function playNewOrderAlertSound() {
+function playSpiritedBuzzerChime() {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
 
     const t = ctx.currentTime;
 
-    // First Ding (High C6: 1046.5 Hz)
-    const osc1 = ctx.createOscillator();
-    const gain1 = ctx.createGain();
-    osc1.type = 'sine';
-    osc1.frequency.setValueAtTime(1046.5, t);
-    gain1.gain.setValueAtTime(0.85, t);
-    gain1.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-    osc1.connect(gain1);
-    gain1.connect(ctx.destination);
-    osc1.start(t);
-    osc1.stop(t + 0.38);
+    // Helper: Play a punchy energetic note
+    const playNote = (freq, startOffset, duration, type = 'sine', gainVal = 0.85, pitchBendTo = null) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t + startOffset);
+      if (pitchBendTo) {
+        osc.frequency.exponentialRampToValueAtTime(pitchBendTo, t + startOffset + duration);
+      }
+      gain.gain.setValueAtTime(gainVal, t + startOffset);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + startOffset + duration);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t + startOffset);
+      osc.stop(t + startOffset + duration + 0.05);
+    };
 
-    // Second Dong (Harmonic G5: 783.99 Hz)
-    const osc2 = ctx.createOscillator();
-    const gain2 = ctx.createGain();
-    osc2.type = 'triangle';
-    osc2.frequency.setValueAtTime(783.99, t + 0.22);
-    gain2.gain.setValueAtTime(0.95, t + 0.22);
-    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
-    osc2.connect(gain2);
-    gain2.connect(ctx.destination);
-    osc2.start(t + 0.22);
-    osc2.stop(t + 0.72);
+    // 1. Playful Bouncy Fanfare: "Do - Re - Mi - Sol! 🎶"
+    // G5 (784Hz) -> C6 (1046.5Hz) -> E6 (1318.5Hz) -> G6 (1568Hz)
+    playNote(783.99, 0.00, 0.10, 'triangle', 0.85);  // bouncy low beat
+    playNote(1046.50, 0.10, 0.10, 'triangle', 0.90); // upbeat hop
+    playNote(1318.51, 0.20, 0.12, 'sine', 0.95);     // energetic climb
+    playNote(1567.98, 0.32, 0.20, 'sine', 0.98);     // victory celebration hit!
 
-    // Third High Celebration Chime (E6: 1318.5 Hz)
-    const osc3 = ctx.createOscillator();
-    const gain3 = ctx.createGain();
-    osc3.type = 'sine';
-    osc3.frequency.setValueAtTime(1318.5, t + 0.45);
-    gain3.gain.setValueAtTime(0.8, t + 0.45);
-    gain3.gain.exponentialRampToValueAtTime(0.001, t + 1.15);
-    osc3.connect(gain3);
-    gain3.connect(ctx.destination);
-    osc3.start(t + 0.45);
-    osc3.stop(t + 1.2);
+    // 2. Funny Bicycle Delivery Bell double-ring: "Ring-Ring! 🔔🚲"
+    // Rapid metallic high pings at C7 (2093Hz) + resonant octave harmonic at 4186Hz
+    playNote(2093.00, 0.42, 0.09, 'sine', 0.90);
+    playNote(4186.00, 0.42, 0.07, 'sine', 0.40);
+    playNote(2093.00, 0.52, 0.11, 'sine', 0.95);
+    playNote(4186.00, 0.52, 0.09, 'sine', 0.45);
 
-    // Haptic phone vibration pattern: Buzz-Pause-Buzz
+    // 3. Cheerful energetic cartoon whistle-glide: "Wheeee-Whoop! 🛵💨"
+    // Rapid slide up from 880Hz to 1480Hz
+    playNote(880, 0.64, 0.22, 'triangle', 0.80, 1480);
+
+    // Haptic phone vibration sync: Bouncy pattern
     if ('vibrate' in navigator) {
-      navigator.vibrate([280, 140, 380]);
+      navigator.vibrate([140, 60, 140, 60, 220]);
     }
   } catch (err) {
-    console.warn('Audio alert error:', err);
+    console.warn('Spirited buzzer audio error:', err);
   }
+}
+
+/**
+ * Legacy alias for backwards compatibility
+ */
+function playNewOrderAlertSound() {
+  playSpiritedBuzzerChime();
+}
+
+/**
+ * Starts continuous spirited ringing bell for up to 10 seconds until user accepts.
+ */
+function startOrderAlertRingAndModal(order, durationSeconds = 10) {
+  currentAlertOrder = order;
+  isOrderAlertActive = true;
+
+  // 1. Populate Modal UI
+  const modal = document.getElementById('new-delivery-alert-modal');
+  if (!modal) return;
+
+  const flatEl = document.getElementById('alert-order-flat');
+  const amountEl = document.getElementById('alert-order-amount');
+  const invoiceEl = document.getElementById('alert-order-invoice');
+  const payStatusEl = document.getElementById('alert-order-payment-status');
+  const agentEl = document.getElementById('alert-order-agent');
+  const noteWrap = document.getElementById('alert-order-note-wrap');
+  const noteEl = document.getElementById('alert-order-note');
+  const progressBar = document.getElementById('alert-progress-bar');
+  const countdownNum = document.getElementById('alert-countdown-num');
+  const statusEl = document.getElementById('alert-timer-status');
+
+  if (flatEl) flatEl.textContent = order.flatNo ? `Flat ${order.flatNo}` : 'Express Order';
+  if (amountEl) amountEl.textContent = formatCurrency(order.billAmount || 0);
+  if (invoiceEl) invoiceEl.textContent = `#${order.invoiceNo || 'NEW'}`;
+  if (payStatusEl) {
+    payStatusEl.textContent = order.paymentStatus || 'UNPAID';
+    payStatusEl.style.color = order.paymentStatus === 'PAID' ? '#059669' : '#dc2626';
+  }
+  if (agentEl) agentEl.textContent = order.deliveryAgent || 'You';
+
+  if (order.remarks && order.remarks.trim()) {
+    if (noteWrap) noteWrap.style.display = 'flex';
+    if (noteEl) noteEl.textContent = order.remarks.trim();
+  } else {
+    if (noteWrap) noteWrap.style.display = 'none';
+  }
+
+  if (statusEl) statusEl.textContent = 'Spirited buzzer ringing...';
+  if (progressBar) progressBar.style.width = '100%';
+  if (countdownNum) countdownNum.textContent = `${durationSeconds}s`;
+
+  modal.classList.add('active');
+
+  // 2. Start Immediate Ring Sound & Repeat Every 1.15s
+  stopNewOrderAlertRing(false);
+  playSpiritedBuzzerChime();
+
+  orderAlertSoundInterval = setInterval(() => {
+    if (isOrderAlertActive) {
+      playSpiritedBuzzerChime();
+    }
+  }, 1150);
+
+  // 3. Smooth 10-Second Countdown Progress Bar
+  const totalMs = durationSeconds * 1000;
+  let remainingMs = totalMs;
+  const updateInterval = 100;
+
+  orderAlertCountdownTimer = setInterval(() => {
+    remainingMs = Math.max(0, remainingMs - updateInterval);
+    const pct = (remainingMs / totalMs) * 100;
+    if (progressBar) progressBar.style.width = `${pct}%`;
+    if (countdownNum) countdownNum.textContent = `${Math.ceil(remainingMs / 1000)}s`;
+
+    if (remainingMs <= 0) {
+      clearInterval(orderAlertCountdownTimer);
+      orderAlertCountdownTimer = null;
+      // Stop the sound after 10 seconds automatically, but leave the accept card for the user
+      stopNewOrderAlertRing(false);
+      if (statusEl) statusEl.textContent = 'Buzzer stopped • Tap to accept';
+      if (countdownNum) countdownNum.textContent = '0s';
+      if (progressBar) progressBar.style.width = '0%';
+    }
+  }, updateInterval);
+}
+
+/**
+ * Stops continuous audio ring, vibration, and timers.
+ */
+function stopNewOrderAlertRing(closeModal = true) {
+  if (orderAlertSoundInterval) {
+    clearInterval(orderAlertSoundInterval);
+    orderAlertSoundInterval = null;
+  }
+  if (orderAlertCountdownTimer) {
+    clearInterval(orderAlertCountdownTimer);
+    orderAlertCountdownTimer = null;
+  }
+  if (orderAlertTimeout) {
+    clearTimeout(orderAlertTimeout);
+    orderAlertTimeout = null;
+  }
+  if ('vibrate' in navigator) {
+    navigator.vibrate(0);
+  }
+
+  if (closeModal) {
+    isOrderAlertActive = false;
+    const modal = document.getElementById('new-delivery-alert-modal');
+    if (modal) modal.classList.remove('active');
+  }
+}
+
+/**
+ * User taps "ACCEPT & RIDE 🚀"
+ */
+function acceptNewDeliveryOrder() {
+  const order = currentAlertOrder;
+  stopNewOrderAlertRing(true);
+
+  if (!order) return;
+
+  // Navigate to Pending Deliveries screen
+  switchScreen('deliveries');
+
+  // If this order is in local state, highlight it
+  setTimeout(() => {
+    const cardEl = document.querySelector(`.bill-card[data-invoice="${order.invoiceNo}"]`) ||
+                   document.querySelector(`[onclick*="${order.invoiceNo}"]`);
+    if (cardEl) {
+      cardEl.classList.add('card-just-accepted');
+      cardEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 350);
+
+  showToast(`🚀 Order #${order.invoiceNo} (Flat ${order.flatNo}) Accepted! Ride safe and deliver with speed!`, 'success');
+}
+
+/**
+ * User dismisses / mutes alert
+ */
+function dismissNewDeliveryAlert() {
+  stopNewOrderAlertRing(true);
+  showToast('Alert muted', 'info');
+}
+
+function onAlertOverlayClick(e) {
+  if (e.target.id === 'new-delivery-alert-modal') {
+    dismissNewDeliveryAlert();
+  }
+}
+
+/**
+ * Test function for instant preview of the spirited buzzer and 10s ring modal
+ */
+function testSpiritedOrderAlert() {
+  // Find an active pending delivery or synthesize a sample
+  const sampleOrder = (appState.bills && appState.bills.find(b => b.deliveryStatus !== 'Delivered')) || {
+    invoiceNo: '5460',
+    flatNo: '3015',
+    billAmount: 383,
+    paymentStatus: 'UNPAID',
+    deliveryAgent: appState.currentUser?.name || 'Mustafa',
+    remarks: 'Leave at door if not answering bell.'
+  };
+
+  startOrderAlertRingAndModal(sampleOrder, 10);
+  showToast('🔔 10-Second Spirited Delivery Buzzer Activated!', 'info');
 }
 
 function initAgentAssignedTracking() {
@@ -1741,8 +1919,8 @@ function renderPendingDeliveries() {
             : 'All retail orders have been delivered.'}
         </p>
         ${isAgent ? `
-          <button type="button" class="btn btn-outline" style="border-radius: 99px; font-size: 12px;" onclick="playNewOrderAlertSound(); showToast('🔔 Alert sound is working!', 'info');">
-            <i class="fa-solid fa-volume-high text-primary"></i> Test Alert Chime
+          <button type="button" class="btn btn-outline" style="border-radius: 99px; font-size: 12px;" onclick="testSpiritedOrderAlert();">
+            <i class="fa-solid fa-bell text-primary"></i> Test 10s Ringing Buzzer
           </button>
         ` : ''}
       </div>
@@ -2699,7 +2877,7 @@ function executeReassignAgent(newAgent) {
   showToast(`Assigned #${bill.invoiceNo} to ${newAgent}`, 'success');
 
   if (appState.currentUser?.role === 'agent' && isSameAgent(newAgent, appState.currentUser.agentName)) {
-    playNewOrderAlertSound();
+    startOrderAlertRingAndModal(bill, 10);
   }
 
   renderApp();
@@ -3655,9 +3833,9 @@ function mergeCloudBills(cloudBills) {
       });
 
       if (newlyAssigned.length > 0) {
-        playNewOrderAlertSound();
         const first = newlyAssigned[0];
-        showToast(`🔔 NEW DELIVERY ALLOCATED: Flat ${first.flatNo} (#${first.invoiceNo}) - ${formatCurrency(first.billAmount)}!`, 'success');
+        startOrderAlertRingAndModal(first, 10);
+        showToast(`🔔 NEW MISSION ALLOCATED: Flat ${first.flatNo} (#${first.invoiceNo}) - ${formatCurrency(first.billAmount)}!`, 'success');
         if (appState.activeScreen === 'screen-pending-deliveries') {
           renderPendingDeliveries();
         }

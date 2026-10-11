@@ -28,7 +28,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <!-- App Stylesheet -->
-  <link rel="stylesheet" href="styles.css?v=20261011_5" />
+  <link rel="stylesheet" href="styles.css?v=20261011_6" />
 </head>
 <body class="theme-light">
   <div id="app" class="app-container">
@@ -423,8 +423,8 @@
               </div>
             </div>
             <div class="agent-dashboard-actions">
-              <button type="button" class="btn-test-sound" onclick="playNewOrderAlertSound(); showToast('🔔 Alert Sound Tested OK!', 'info');" title="Test Notification Chime">
-                <i class="fa-solid fa-volume-high"></i> Sound On
+              <button type="button" class="btn-test-sound" onclick="testSpiritedOrderAlert();" title="Test Spirited Ring Bell Alert (10s Continuous)">
+                <i class="fa-solid fa-bell"></i> Ring Bell
               </button>
             </div>
           </div>
@@ -2655,6 +2655,87 @@
       </div>
     </div>
 
+    <!-- ==================== SPIRITED NEW DELIVERY ALERT MODAL ==================== -->
+    <div id="new-delivery-alert-modal" class="modal-overlay alert-order-overlay" onclick="onAlertOverlayClick(event)">
+      <div class="order-alert-card" onclick="event.stopPropagation()">
+        
+        <!-- Animated Ringing Bell Halo Header -->
+        <div class="order-alert-badge-top">
+          <div class="order-alert-bell-halo">
+            <div class="bell-wave-ripple wave-1"></div>
+            <div class="bell-wave-ripple wave-2"></div>
+            <div class="order-alert-bell-icon">
+              <i class="fa-solid fa-bell"></i>
+            </div>
+          </div>
+          <span class="order-alert-mission-tag">
+            <i class="fa-solid fa-bolt text-amber"></i> MISSION INCOMING
+          </span>
+        </div>
+
+        <div class="order-alert-content">
+          <h2 class="order-alert-title">New Order Allocated! 🛵💨</h2>
+          <p class="order-alert-subtitle">Get ready to roll! Tap Accept to lock in this delivery.</p>
+
+          <!-- Highlight Order Card -->
+          <div class="order-alert-highlight-box">
+            <div class="alert-box-top">
+              <div class="alert-flat-badge">
+                <i class="fa-solid fa-building"></i>
+                <span id="alert-order-flat">Flat 3015</span>
+              </div>
+              <div class="alert-amount-pill" id="alert-order-amount">
+                ₹383.00
+              </div>
+            </div>
+            
+            <div class="alert-meta-grid">
+              <div class="alert-meta-item">
+                <span class="meta-label">Invoice</span>
+                <span class="meta-value font-mono" id="alert-order-invoice">#5460</span>
+              </div>
+              <div class="alert-meta-item">
+                <span class="meta-label">Payment</span>
+                <span class="meta-value" id="alert-order-payment-status">UNPAID</span>
+              </div>
+              <div class="alert-meta-item">
+                <span class="meta-label">Assigned To</span>
+                <span class="meta-value" id="alert-order-agent">You</span>
+              </div>
+            </div>
+
+            <div id="alert-order-note-wrap" class="alert-note-box" style="display: none;">
+              <i class="fa-solid fa-comment-dots"></i>
+              <span id="alert-order-note">Customer note</span>
+            </div>
+          </div>
+
+          <!-- 10-Second Buzzer Countdown Progress Bar -->
+          <div class="order-alert-timer-wrap">
+            <div class="alert-timer-header">
+              <span class="timer-label"><i class="fa-solid fa-volume-high text-green"></i> <span id="alert-timer-status">Spirited buzzer ringing...</span></span>
+              <span class="timer-countdown" id="alert-countdown-num">10s</span>
+            </div>
+            <div class="alert-progress-track">
+              <div id="alert-progress-bar" class="alert-progress-fill"></div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="order-alert-actions">
+            <button type="button" class="btn-accept-order" id="btn-accept-new-delivery" onclick="acceptNewDeliveryOrder()">
+              <i class="fa-solid fa-circle-check"></i>
+              <span>ACCEPT & RIDE 🚀</span>
+            </button>
+            <button type="button" class="btn-dismiss-alert" onclick="dismissNewDeliveryAlert()">
+              <i class="fa-solid fa-bell-slash"></i> Mute / Dismiss
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
     <!-- TOAST NOTIFICATION CONTAINER -->
     <div id="toast-container" class="toast-container"></div>
 
@@ -2663,6 +2744,6 @@
   <!-- App Core JavaScript Logic -->
   <script src="google-apps-script.js"></script>
   <script src="sales-dashboard.js?v=20261011_5"></script>
-  <script src="app.js?v=20261011_5"></script>
+  <script src="app.js?v=20261011_6"></script>
 </body>
 </html>
