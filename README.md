@@ -37,8 +37,11 @@ An ultra-premium, dark glassmorphic web application built for **rad.** retail ou
   - Add bills, assign orders to delivery agents, track fleet attendance, and manage settlements.
 - **Delivery Fleet (Agent)**: PIN `5555`
   - Punch In/Out, view assigned delivery route, upload delivery proofs, scan QR, and collect payments.
-- **Store Owner**: PIN `9999`
-  - Full admin control, financial KPI dashboard, edit invoice amounts, Google Sheets sync, and settings.
+- **Store Owner (Master Admin)**:
+  - **Rithish**: PIN `1830`
+  - **Akash**: PIN `4321`
+  - **Vishwa**: PIN `1234`
+  - Full admin control, financial KPI dashboard, edit invoice amounts, staff account management, and settings.
 - **Quick Logout**: Easily sign out or switch between roles with one tap.
 
 ---

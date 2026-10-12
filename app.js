@@ -25,11 +25,29 @@ const STORAGE_KEYS = {
 
 const DEFAULT_ACCOUNTS = [
   {
-    id: 'acc-admin-1',
+    id: 'acc-owner-1',
     role: 'owner',
-    name: 'Store Owner',
+    name: 'Rithish',
     phone: '9999999999',
     pin: '1830',
+    storeName: 'rad. Express Flagship',
+    createdAt: '2026-10-01'
+  },
+  {
+    id: 'acc-owner-2',
+    role: 'owner',
+    name: 'Akash',
+    phone: '9999999998',
+    pin: '4321',
+    storeName: 'rad. Express Flagship',
+    createdAt: '2026-10-01'
+  },
+  {
+    id: 'acc-owner-3',
+    role: 'owner',
+    name: 'Vishwa',
+    phone: '9999999997',
+    pin: '1234',
     storeName: 'rad. Express Flagship',
     createdAt: '2026-10-01'
   }
@@ -547,6 +565,72 @@ function loadSavedData() {
     saveAccountsToLocal(false);
   }
 
+  // Ensure Rithish, Akash, and Vishwa master admin accounts exist and migrate legacy accounts
+  let accountsModified = false;
+  const storeOwnerIndex = appState.accounts.findIndex(a => a.role === 'owner' && (a.name === 'Store Owner' || a.id === 'acc-admin-1'));
+  if (storeOwnerIndex !== -1) {
+    appState.accounts[storeOwnerIndex].name = 'Rithish';
+    if (!appState.accounts[storeOwnerIndex].pin) appState.accounts[storeOwnerIndex].pin = '1830';
+    accountsModified = true;
+  }
+
+  if (!appState.accounts.some(a => a.name.toLowerCase() === 'rithish')) {
+    appState.accounts.unshift({
+      id: 'acc-owner-1',
+      role: 'owner',
+      name: 'Rithish',
+      phone: '9999999999',
+      pin: '1830',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  }
+
+  const akashAcc = appState.accounts.find(a => a.name.toLowerCase() === 'akash');
+  if (!akashAcc) {
+    appState.accounts.push({
+      id: 'acc-owner-2',
+      role: 'owner',
+      name: 'Akash',
+      phone: '9999999998',
+      pin: '4321',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  } else {
+    if (akashAcc.pin !== '4321' || akashAcc.role !== 'owner') {
+      akashAcc.pin = '4321';
+      akashAcc.role = 'owner';
+      accountsModified = true;
+    }
+  }
+
+  const vishwaAcc = appState.accounts.find(a => a.name.toLowerCase() === 'vishwa');
+  if (!vishwaAcc) {
+    appState.accounts.push({
+      id: 'acc-owner-3',
+      role: 'owner',
+      name: 'Vishwa',
+      phone: '9999999997',
+      pin: '1234',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  } else {
+    if (vishwaAcc.pin !== '1234' || vishwaAcc.role !== 'owner') {
+      vishwaAcc.pin = '1234';
+      vishwaAcc.role = 'owner';
+      accountsModified = true;
+    }
+  }
+
+  if (accountsModified) {
+    saveAccountsToLocal(false);
+  }
+
   // Update AGENTS_LIST from accounts
   refreshAgentsListFromAccounts();
 
@@ -783,6 +867,7 @@ function updateRoleSelection(role) {
   const ownerLabel = document.getElementById('role-owner-label');
   const agentPickerGroup = document.getElementById('login-agent-picker-group');
   const opsPickerGroup = document.getElementById('login-ops-picker-group');
+  const ownerPickerGroup = document.getElementById('login-owner-picker-group');
 
   opsLabel?.classList.remove('active');
   agentLabel?.classList.remove('active');
@@ -791,6 +876,7 @@ function updateRoleSelection(role) {
   if (role === 'ops') {
     opsLabel?.classList.add('active');
     agentPickerGroup?.classList.add('hidden');
+    ownerPickerGroup?.classList.add('hidden');
     const opsAccounts = appState.accounts.filter(a => a.role === 'ops');
     if (opsAccounts.length > 1) {
       opsPickerGroup?.classList.remove('hidden');
@@ -801,16 +887,30 @@ function updateRoleSelection(role) {
     agentLabel?.classList.add('active');
     agentPickerGroup?.classList.remove('hidden');
     opsPickerGroup?.classList.add('hidden');
+    ownerPickerGroup?.classList.add('hidden');
   } else if (role === 'owner') {
     ownerLabel?.classList.add('active');
     agentPickerGroup?.classList.add('hidden');
     opsPickerGroup?.classList.add('hidden');
+    ownerPickerGroup?.classList.remove('hidden');
   }
 }
 
 function populateAuthStaffDropdowns() {
   const agentSelect = document.getElementById('login-agent-select');
   const opsSelect = document.getElementById('login-ops-select');
+  const ownerSelect = document.getElementById('login-owner-select');
+
+  if (ownerSelect) {
+    const owners = appState.accounts.filter(a => a.role === 'owner');
+    if (owners.length === 0) {
+      ownerSelect.innerHTML = `<option value="Rithish">Rithish</option>`;
+    } else {
+      ownerSelect.innerHTML = owners.map(o => 
+        `<option value="${o.name}">${o.name}</option>`
+      ).join('');
+    }
+  }
 
   if (agentSelect) {
     const agents = appState.accounts.filter(a => a.role === 'agent');
@@ -904,13 +1004,36 @@ function handleLogin(event) {
 
   if (role === 'owner') {
     const ownerAccounts = appState.accounts.filter(a => a.role === 'owner');
-    const matchedOwner = ownerAccounts.find(a => a.pin === pin);
-    if (!matchedOwner && pin !== '1830' && pin !== 'owner123') {
-      showToast('Incorrect Store Owner PIN! (Default: 1830)', 'danger');
-      if (pinInput) pinInput.value = '';
-      return;
+    const ownerSelect = document.getElementById('login-owner-select');
+    const selectedOwnerName = ownerSelect ? ownerSelect.value : '';
+
+    let matchedOwner = null;
+    if (selectedOwnerName) {
+      matchedOwner = ownerAccounts.find(a => a.name === selectedOwnerName);
+      if (matchedOwner) {
+        if (matchedOwner.pin !== pin && pin !== '1830' && pin !== 'owner123') {
+          // If the entered PIN matches another valid owner, auto-switch to that owner
+          const otherOwner = ownerAccounts.find(a => a.pin === pin);
+          if (otherOwner) {
+            matchedOwner = otherOwner;
+          } else {
+            showToast(`Incorrect PIN for ${matchedOwner.name}!`, 'danger');
+            if (pinInput) pinInput.value = '';
+            return;
+          }
+        }
+      }
     }
-    userName = matchedOwner ? matchedOwner.name : 'Store Owner';
+
+    if (!matchedOwner) {
+      matchedOwner = ownerAccounts.find(a => a.pin === pin);
+      if (!matchedOwner && pin !== '1830' && pin !== 'owner123') {
+        showToast('Incorrect Store Owner PIN!', 'danger');
+        if (pinInput) pinInput.value = '';
+        return;
+      }
+    }
+    userName = matchedOwner ? matchedOwner.name : 'Rithish';
   } else if (role === 'agent') {
     const agentSelect = document.getElementById('login-agent-select');
     agentName = agentSelect ? agentSelect.value : (AGENTS_LIST[0] || 'Rahul Sharma');
@@ -1362,7 +1485,7 @@ function applyUserRoleUI() {
   }
 
   if (outletUserInfo) {
-    if (isOwner) outletUserInfo.textContent = 'Owner: rad. Express';
+    if (isOwner) outletUserInfo.textContent = `Owner: ${appState.currentUser?.name || 'Rithish'}`;
     else if (isAgent) outletUserInfo.textContent = `Agent: ${agentName}`;
     else outletUserInfo.textContent = 'Ops: rad. Express';
   }
@@ -1448,7 +1571,7 @@ function applyUserRoleUI() {
 }
 
 function promptOwnerLoginForDashboard() {
-  appState.currentUser = { role: 'owner', name: 'Store Owner' };
+  appState.currentUser = { role: 'owner', name: 'Rithish' };
   localStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(appState.currentUser));
   applyUserRoleUI();
   showToast('Switched to Store Owner View!', 'success');
@@ -1476,7 +1599,7 @@ function switchUserRoleQuick() {
     nextName = 'Rahul Sharma (Agent)';
   } else if (currentRole === 'agent') {
     nextRole = 'owner';
-    nextName = 'Store Owner';
+    nextName = 'Rithish';
   } else {
     nextRole = 'ops';
     nextName = 'Operations Executive';
@@ -4086,8 +4209,9 @@ async function confirmFactoryResetAllData() {
     return;
   }
 
-  const promptPin = prompt('⚠️ FACTORY RESET WARNING: This will erase all bills, attendance, and reset accounts to Store Owner with PIN 1830.\n\nEnter Store Owner PIN to confirm:');
-  if (promptPin !== '1830') {
+  const ownerPins = appState.accounts.filter(a => a.role === 'owner').map(a => a.pin);
+  const promptPin = prompt('⚠️ FACTORY RESET WARNING: This will erase all bills, attendance, and reset accounts to Master Admins (Rithish, Akash, Vishwa).\n\nEnter Store Owner PIN to confirm:');
+  if (!ownerPins.includes(promptPin) && promptPin !== '1830') {
     showToast('Incorrect PIN or Factory Reset cancelled.', 'warning');
     return;
   }
@@ -4097,11 +4221,29 @@ async function confirmFactoryResetAllData() {
   appState.agentLocations = {};
   appState.accounts = [
     {
-      id: 'acc-admin-1',
+      id: 'acc-owner-1',
       role: 'owner',
-      name: 'Store Owner',
+      name: 'Rithish',
       phone: '9999999999',
       pin: '1830',
+      storeName: 'rad. Express Flagship',
+      createdAt: getTodayISODate()
+    },
+    {
+      id: 'acc-owner-2',
+      role: 'owner',
+      name: 'Akash',
+      phone: '9999999998',
+      pin: '4321',
+      storeName: 'rad. Express Flagship',
+      createdAt: getTodayISODate()
+    },
+    {
+      id: 'acc-owner-3',
+      role: 'owner',
+      name: 'Vishwa',
+      phone: '9999999997',
+      pin: '1234',
       storeName: 'rad. Express Flagship',
       createdAt: getTodayISODate()
     }
