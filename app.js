@@ -19,7 +19,7 @@ const STORAGE_KEYS = {
   STORE_UPI: 'retail_bills_store_upi_v5',
   ATTENDANCE: 'retail_bills_attendance_v10',
   THEME: 'retail_bills_theme_v1',
-  ACCOUNTS: 'retail_bills_accounts_v9',
+  ACCOUNTS: 'retail_bills_accounts_v10',
   LOCATIONS: 'retail_bills_agent_locations_v2'
 };
 
@@ -50,6 +50,33 @@ const DEFAULT_ACCOUNTS = [
     pin: '1234',
     storeName: 'rad. Express Flagship',
     createdAt: '2026-10-01'
+  },
+  {
+    id: 'staff_1791613381706',
+    role: 'agent',
+    name: 'Lokesh',
+    phone: '',
+    pin: '1432',
+    route: '',
+    createdAt: '2026-10-10'
+  },
+  {
+    id: 'staff_1791619802340',
+    role: 'agent',
+    name: 'Mustafa',
+    phone: '',
+    pin: '1988',
+    route: '',
+    createdAt: '2026-10-10'
+  },
+  {
+    id: 'staff_1791733869298',
+    role: 'ops',
+    name: 'naresh',
+    phone: '',
+    pin: '1117',
+    route: '',
+    createdAt: '2026-10-11'
   }
 ];
 
@@ -513,12 +540,98 @@ function applyTheme(theme) {
   if (label) label.textContent = 'Light';
 }
 
+function ensureMasterAdminsExist() {
+  let accountsModified = false;
+  if (!Array.isArray(appState.accounts)) {
+    appState.accounts = JSON.parse(JSON.stringify(DEFAULT_ACCOUNTS));
+    return true;
+  }
+
+  // Migrate legacy Store Owner
+  const storeOwnerIndex = appState.accounts.findIndex(a => a.role === 'owner' && (a.name === 'Store Owner' || a.id === 'acc-admin-1'));
+  if (storeOwnerIndex !== -1) {
+    appState.accounts[storeOwnerIndex].name = 'Rithish';
+    if (!appState.accounts[storeOwnerIndex].pin) appState.accounts[storeOwnerIndex].pin = '1830';
+    accountsModified = true;
+  }
+
+  // Ensure Rithish exists (PIN: 1830)
+  const rithish = appState.accounts.find(a => a.name.toLowerCase() === 'rithish');
+  if (!rithish) {
+    appState.accounts.unshift({
+      id: 'acc-owner-1',
+      role: 'owner',
+      name: 'Rithish',
+      phone: '9999999999',
+      pin: '1830',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  } else {
+    rithish.role = 'owner';
+    rithish.pin = '1830';
+  }
+
+  // Ensure Akash exists (PIN: 4321)
+  const akashAcc = appState.accounts.find(a => a.name.toLowerCase() === 'akash');
+  if (!akashAcc) {
+    appState.accounts.push({
+      id: 'acc-owner-2',
+      role: 'owner',
+      name: 'Akash',
+      phone: '9999999998',
+      pin: '4321',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  } else {
+    if (akashAcc.pin !== '4321' || akashAcc.role !== 'owner') {
+      akashAcc.pin = '4321';
+      akashAcc.role = 'owner';
+      accountsModified = true;
+    }
+  }
+
+  // Ensure Vishwa exists (PIN: 1234)
+  const vishwaAcc = appState.accounts.find(a => a.name.toLowerCase() === 'vishwa');
+  if (!vishwaAcc) {
+    appState.accounts.push({
+      id: 'acc-owner-3',
+      role: 'owner',
+      name: 'Vishwa',
+      phone: '9999999997',
+      pin: '1234',
+      storeName: 'rad. Express Flagship',
+      createdAt: '2026-10-01'
+    });
+    accountsModified = true;
+  } else {
+    if (vishwaAcc.pin !== '1234' || vishwaAcc.role !== 'owner') {
+      vishwaAcc.pin = '1234';
+      vishwaAcc.role = 'owner';
+      accountsModified = true;
+    }
+  }
+
+  // Ensure default staff accounts are present
+  DEFAULT_ACCOUNTS.forEach(defAcc => {
+    if (!appState.accounts.some(a => a.name.toLowerCase() === defAcc.name.toLowerCase())) {
+      appState.accounts.push({ ...defAcc });
+      accountsModified = true;
+    }
+  });
+
+  return accountsModified;
+}
+
 function loadSavedData() {
   // Purge legacy storage versions
   [
     'retail_bills_data_v1', 'retail_bills_data_v2', 'retail_bills_data_v3', 'retail_bills_data_v4', 'retail_bills_data_v5', 'retail_bills_data_v6', 'retail_bills_data_v7', 'retail_bills_data_v8', 'retail_bills_data_v9',
     'retail_bills_attendance_v1', 'retail_bills_attendance_v2', 'retail_bills_attendance_v3', 'retail_bills_attendance_v4', 'retail_bills_attendance_v5', 'retail_bills_attendance_v6', 'retail_bills_attendance_v7', 'retail_bills_attendance_v8', 'retail_bills_attendance_v9',
-    'retail_bills_accounts_v1', 'retail_bills_accounts_v2', 'retail_bills_accounts_v3', 'retail_bills_accounts_v4', 'retail_bills_accounts_v5', 'retail_bills_accounts_v6', 'retail_bills_accounts_v7', 'retail_bills_accounts_v8',
+    'retail_bills_accounts_v1', 'retail_bills_accounts_v2', 'retail_bills_accounts_v3', 'retail_bills_accounts_v4', 'retail_bills_accounts_v5', 'retail_bills_accounts_v6', 'retail_bills_accounts_v7', 'retail_bills_accounts_v8', 'retail_bills_accounts_v9',
     'retail_bills_auth_v1', 'retail_bills_auth_v2', 'retail_bills_auth_v3', 'retail_bills_auth_v4', 'retail_bills_auth_v5', 'retail_bills_auth_v6',
     'retail_bills_agent_locations_v1'
   ].forEach(k => localStorage.removeItem(k));
@@ -558,77 +671,17 @@ function loadSavedData() {
     try {
       appState.accounts = JSON.parse(savedAccounts);
     } catch (e) {
-      appState.accounts = [...DEFAULT_ACCOUNTS];
+      appState.accounts = JSON.parse(JSON.stringify(DEFAULT_ACCOUNTS));
     }
   } else {
-    appState.accounts = [...DEFAULT_ACCOUNTS];
+    appState.accounts = JSON.parse(JSON.stringify(DEFAULT_ACCOUNTS));
     saveAccountsToLocal(false);
   }
 
   // Ensure Rithish, Akash, and Vishwa master admin accounts exist and migrate legacy accounts
-  let accountsModified = false;
-  const storeOwnerIndex = appState.accounts.findIndex(a => a.role === 'owner' && (a.name === 'Store Owner' || a.id === 'acc-admin-1'));
-  if (storeOwnerIndex !== -1) {
-    appState.accounts[storeOwnerIndex].name = 'Rithish';
-    if (!appState.accounts[storeOwnerIndex].pin) appState.accounts[storeOwnerIndex].pin = '1830';
-    accountsModified = true;
-  }
-
-  if (!appState.accounts.some(a => a.name.toLowerCase() === 'rithish')) {
-    appState.accounts.unshift({
-      id: 'acc-owner-1',
-      role: 'owner',
-      name: 'Rithish',
-      phone: '9999999999',
-      pin: '1830',
-      storeName: 'rad. Express Flagship',
-      createdAt: '2026-10-01'
-    });
-    accountsModified = true;
-  }
-
-  const akashAcc = appState.accounts.find(a => a.name.toLowerCase() === 'akash');
-  if (!akashAcc) {
-    appState.accounts.push({
-      id: 'acc-owner-2',
-      role: 'owner',
-      name: 'Akash',
-      phone: '9999999998',
-      pin: '4321',
-      storeName: 'rad. Express Flagship',
-      createdAt: '2026-10-01'
-    });
-    accountsModified = true;
-  } else {
-    if (akashAcc.pin !== '4321' || akashAcc.role !== 'owner') {
-      akashAcc.pin = '4321';
-      akashAcc.role = 'owner';
-      accountsModified = true;
-    }
-  }
-
-  const vishwaAcc = appState.accounts.find(a => a.name.toLowerCase() === 'vishwa');
-  if (!vishwaAcc) {
-    appState.accounts.push({
-      id: 'acc-owner-3',
-      role: 'owner',
-      name: 'Vishwa',
-      phone: '9999999997',
-      pin: '1234',
-      storeName: 'rad. Express Flagship',
-      createdAt: '2026-10-01'
-    });
-    accountsModified = true;
-  } else {
-    if (vishwaAcc.pin !== '1234' || vishwaAcc.role !== 'owner') {
-      vishwaAcc.pin = '1234';
-      vishwaAcc.role = 'owner';
-      accountsModified = true;
-    }
-  }
-
+  const accountsModified = ensureMasterAdminsExist();
   if (accountsModified) {
-    saveAccountsToLocal(false);
+    saveAccountsToLocal(true);
   }
 
   // Update AGENTS_LIST from accounts
@@ -873,16 +926,13 @@ function updateRoleSelection(role) {
   agentLabel?.classList.remove('active');
   ownerLabel?.classList.remove('active');
 
+  populateAuthStaffDropdowns();
+
   if (role === 'ops') {
     opsLabel?.classList.add('active');
     agentPickerGroup?.classList.add('hidden');
     ownerPickerGroup?.classList.add('hidden');
-    const opsAccounts = appState.accounts.filter(a => a.role === 'ops');
-    if (opsAccounts.length > 1) {
-      opsPickerGroup?.classList.remove('hidden');
-    } else {
-      opsPickerGroup?.classList.add('hidden');
-    }
+    opsPickerGroup?.classList.remove('hidden');
   } else if (role === 'agent') {
     agentLabel?.classList.add('active');
     agentPickerGroup?.classList.remove('hidden');
@@ -897,19 +947,17 @@ function updateRoleSelection(role) {
 }
 
 function populateAuthStaffDropdowns() {
+  ensureMasterAdminsExist();
+
   const agentSelect = document.getElementById('login-agent-select');
   const opsSelect = document.getElementById('login-ops-select');
   const ownerSelect = document.getElementById('login-owner-select');
 
   if (ownerSelect) {
     const owners = appState.accounts.filter(a => a.role === 'owner');
-    if (owners.length === 0) {
-      ownerSelect.innerHTML = `<option value="Rithish">Rithish</option>`;
-    } else {
-      ownerSelect.innerHTML = owners.map(o => 
-        `<option value="${o.name}">${o.name}</option>`
-      ).join('');
-    }
+    ownerSelect.innerHTML = owners.map(o => 
+      `<option value="${o.name}">${o.name} (Master Admin)</option>`
+    ).join('');
   }
 
   if (agentSelect) {
@@ -925,13 +973,11 @@ function populateAuthStaffDropdowns() {
 
   if (opsSelect) {
     const ops = appState.accounts.filter(a => a.role === 'ops');
-    if (ops.length === 0) {
-      opsSelect.innerHTML = `<option value="Operations Executive">Operations Executive</option>`;
-    } else {
-      opsSelect.innerHTML = ops.map(o => 
-        `<option value="${o.name}">${o.name}</option>`
-      ).join('');
-    }
+    const owners = appState.accounts.filter(a => a.role === 'owner');
+    let opts = [`<option value="Operations Executive">Operations Executive</option>`];
+    ops.forEach(o => opts.push(`<option value="${o.name}">${o.name} (Operations)</option>`));
+    owners.forEach(o => opts.push(`<option value="${o.name}">${o.name} (Master Admin)</option>`));
+    opsSelect.innerHTML = opts.join('');
   }
 }
 
@@ -990,7 +1036,7 @@ function handleLogin(event) {
   event.preventDefault();
   const roleRadio = document.querySelector('input[name="auth-role"]:checked');
   const pinInput = document.getElementById('login-pin');
-  const role = roleRadio ? roleRadio.value : 'ops';
+  let role = roleRadio ? roleRadio.value : 'ops';
   const pin = pinInput ? pinInput.value.trim() : '';
 
   if (!pin) {
@@ -999,85 +1045,94 @@ function handleLogin(event) {
     return;
   }
 
-  let userName = 'Operations Executive';
+  ensureMasterAdminsExist();
+
+  let userName = '';
   let agentName = '';
+  let finalRole = role;
 
-  if (role === 'owner') {
-    const ownerAccounts = appState.accounts.filter(a => a.role === 'owner');
-    const ownerSelect = document.getElementById('login-owner-select');
-    const selectedOwnerName = ownerSelect ? ownerSelect.value : '';
-
-    let matchedOwner = null;
-    if (selectedOwnerName) {
-      matchedOwner = ownerAccounts.find(a => a.name === selectedOwnerName);
-      if (matchedOwner) {
-        if (matchedOwner.pin !== pin && pin !== '1830' && pin !== 'owner123') {
-          // If the entered PIN matches another valid owner, auto-switch to that owner
-          const otherOwner = ownerAccounts.find(a => a.pin === pin);
-          if (otherOwner) {
-            matchedOwner = otherOwner;
-          } else {
-            showToast(`Incorrect PIN for ${matchedOwner.name}!`, 'danger');
-            if (pinInput) pinInput.value = '';
-            return;
-          }
-        }
-      }
-    }
-
-    if (!matchedOwner) {
-      matchedOwner = ownerAccounts.find(a => a.pin === pin);
-      if (!matchedOwner && pin !== '1830' && pin !== 'owner123') {
-        showToast('Incorrect Store Owner PIN!', 'danger');
-        if (pinInput) pinInput.value = '';
-        return;
-      }
-    }
-    userName = matchedOwner ? matchedOwner.name : 'Rithish';
-  } else if (role === 'agent') {
-    const agentSelect = document.getElementById('login-agent-select');
-    agentName = agentSelect ? agentSelect.value : (AGENTS_LIST[0] || 'Rahul Sharma');
-    const agentAcc = appState.accounts.find(a => a.role === 'agent' && a.name === agentName);
-    
-    if (agentAcc) {
-      if (agentAcc.pin !== pin && pin !== '5555' && pin !== 'agent123') {
-        showToast(`Incorrect PIN for ${agentName}!`, 'danger');
-        if (pinInput) pinInput.value = '';
-        return;
-      }
-    } else {
-      if (pin !== '5555' && pin !== 'agent123') {
-        showToast('Incorrect Delivery Agent PIN!', 'danger');
-        if (pinInput) pinInput.value = '';
-        return;
-      }
-    }
-    userName = `${agentName} (Agent)`;
-  } else {
+  // ==========================================
+  // SMART UNIVERSAL PIN RECOGNITION ENGINE
+  // ==========================================
+  // 1. Direct Master Admin PINs:
+  if (pin === '4321') {
+    // Akash
+    finalRole = 'owner';
+    userName = 'Akash';
+  } else if (pin === '1234') {
+    // Vishwa or Ops
     const opsSelect = document.getElementById('login-ops-select');
-    const opsName = (opsSelect && opsSelect.value) ? opsSelect.value : 'Operations Executive';
-    const opsAcc = appState.accounts.find(a => a.role === 'ops' && a.name === opsName);
-    
-    if (opsAcc) {
-      if (opsAcc.pin !== pin && pin !== '1234' && pin !== 'ops123') {
-        showToast(`Incorrect PIN for ${opsName}!`, 'danger');
-        if (pinInput) pinInput.value = '';
-        return;
+    if (role === 'ops' && opsSelect && opsSelect.value && opsSelect.value !== 'Operations Executive' && opsSelect.value !== 'Vishwa') {
+      const opsAcc = appState.accounts.find(a => a.role === 'ops' && a.name === opsSelect.value && a.pin === '1234');
+      if (opsAcc) {
+        finalRole = 'ops';
+        userName = opsAcc.name;
+      } else {
+        finalRole = 'owner';
+        userName = 'Vishwa';
       }
-      userName = opsAcc.name;
     } else {
-      if (pin !== '1234' && pin !== 'ops123') {
-        showToast('Incorrect Operations PIN!', 'danger');
+      finalRole = 'owner';
+      userName = 'Vishwa';
+    }
+  } else if (pin === '1830' || pin === 'owner123') {
+    // Rithish
+    finalRole = 'owner';
+    const ownerSelect = document.getElementById('login-owner-select');
+    userName = (ownerSelect && ownerSelect.value) ? ownerSelect.value : 'Rithish';
+  } else {
+    // Check if entered PIN matches any other registered user in accounts
+    const matchedAccount = appState.accounts.find(a => a.pin === pin);
+    if (matchedAccount) {
+      finalRole = matchedAccount.role;
+      userName = matchedAccount.name;
+      if (finalRole === 'agent') agentName = matchedAccount.name;
+    } else if (role === 'owner') {
+      const ownerAccounts = appState.accounts.filter(a => a.role === 'owner');
+      const ownerSelect = document.getElementById('login-owner-select');
+      const selectedOwnerName = ownerSelect ? ownerSelect.value : '';
+      const matchedOwner = ownerAccounts.find(a => a.name === selectedOwnerName) || ownerAccounts.find(a => a.pin === pin);
+
+      if (matchedOwner && matchedOwner.pin === pin) {
+        finalRole = 'owner';
+        userName = matchedOwner.name;
+      } else {
+        showToast('Incorrect PIN! (Rithish: 1830, Akash: 4321, Vishwa: 1234)', 'danger');
         if (pinInput) pinInput.value = '';
         return;
       }
-      userName = 'Operations Executive';
+    } else if (role === 'agent') {
+      const agentSelect = document.getElementById('login-agent-select');
+      agentName = agentSelect ? agentSelect.value : (AGENTS_LIST[0] || 'Rahul Sharma');
+      const agentAcc = appState.accounts.find(a => a.role === 'agent' && a.name === agentName);
+      
+      if ((agentAcc && agentAcc.pin === pin) || pin === '5555' || pin === 'agent123') {
+        finalRole = 'agent';
+        userName = `${agentName} (Agent)`;
+      } else {
+        showToast(`Incorrect PIN for ${agentName}! (Default: 5555)`, 'danger');
+        if (pinInput) pinInput.value = '';
+        return;
+      }
+    } else {
+      const opsSelect = document.getElementById('login-ops-select');
+      const opsName = (opsSelect && opsSelect.value) ? opsSelect.value : 'Operations Executive';
+      const opsAcc = appState.accounts.find(a => a.role === 'ops' && a.name === opsName);
+      
+      if ((opsAcc && opsAcc.pin === pin) || pin === '1234' || pin === 'ops123') {
+        finalRole = 'ops';
+        userName = opsAcc ? opsAcc.name : 'Operations Executive';
+      } else {
+        showToast('Incorrect PIN! (Akash: 4321, Vishwa: 1234, Rithish: 1830)', 'danger');
+        if (pinInput) pinInput.value = '';
+        return;
+      }
     }
   }
 
   const user = {
-    role: role,
-    name: userName,
+    role: finalRole,
+    name: userName || (finalRole === 'owner' ? 'Rithish' : 'Operations Executive'),
     agentName: agentName,
     loginTime: new Date().toISOString()
   };
@@ -1086,7 +1141,7 @@ function handleLogin(event) {
   localStorage.setItem(STORAGE_KEYS.AUTH, JSON.stringify(user));
   applyUserRoleUI();
   hideAuthOverlay();
-  showToast(`Signed in as ${user.name}`, 'success');
+  showToast(`Signed in as ${user.name} (${finalRole === 'owner' ? 'Master Admin' : finalRole === 'agent' ? 'Delivery Fleet' : 'Operations'})`, 'success');
 
   // Enforce attendance first for delivery agents
   if (user.role === 'agent') {
@@ -3905,16 +3960,32 @@ function mergeCloudLocations(cloudLocs) {
 
 function mergeCloudAccounts(cloudAccounts) {
   if (!Array.isArray(cloudAccounts) || cloudAccounts.length === 0) return;
-  
-  if (JSON.stringify(appState.accounts) !== JSON.stringify(cloudAccounts)) {
-    appState.accounts = [...cloudAccounts];
-    saveAccountsToLocal(false);
-    refreshAgentsListFromAccounts();
-    populateAuthStaffDropdowns();
-    populateAllAgentSelectElements();
-    if (appState.activeScreen === 'screen-settings') {
-      renderStaffAccountsList();
+
+  cloudAccounts.forEach(cAcc => {
+    if (!cAcc || !cAcc.name) return;
+    const existing = appState.accounts.find(a => 
+      (cAcc.id && a.id === cAcc.id) || a.name.toLowerCase() === cAcc.name.toLowerCase()
+    );
+    if (existing) {
+      existing.phone = cAcc.phone || existing.phone;
+      existing.route = cAcc.route || existing.route;
+      existing.storeName = cAcc.storeName || existing.storeName;
+      if (existing.name.toLowerCase() === 'akash') existing.pin = '4321';
+      else if (existing.name.toLowerCase() === 'vishwa') existing.pin = '1234';
+      else if (existing.name.toLowerCase() === 'rithish') existing.pin = '1830';
+      else existing.pin = cAcc.pin || existing.pin;
+    } else {
+      appState.accounts.push(cAcc);
     }
+  });
+
+  ensureMasterAdminsExist();
+  saveAccountsToLocal(false);
+  refreshAgentsListFromAccounts();
+  populateAuthStaffDropdowns();
+  populateAllAgentSelectElements();
+  if (appState.activeScreen === 'screen-settings') {
+    renderStaffAccountsList();
   }
 }
 
