@@ -1097,7 +1097,7 @@ function handleLogin(event) {
         finalRole = 'owner';
         userName = matchedOwner.name;
       } else {
-        showToast('Incorrect PIN! (Rithish: 1830, Akash: 4321, Vishwa: 1234)', 'danger');
+        showToast('Incorrect PIN! Please try again.', 'danger');
         if (pinInput) pinInput.value = '';
         return;
       }
@@ -1110,7 +1110,7 @@ function handleLogin(event) {
         finalRole = 'agent';
         userName = `${agentName} (Agent)`;
       } else {
-        showToast(`Incorrect PIN for ${agentName}! (Default: 5555)`, 'danger');
+        showToast(`Incorrect PIN for ${agentName}! Please try again.`, 'danger');
         if (pinInput) pinInput.value = '';
         return;
       }
@@ -1123,7 +1123,7 @@ function handleLogin(event) {
         finalRole = 'ops';
         userName = opsAcc ? opsAcc.name : 'Operations Executive';
       } else {
-        showToast('Incorrect PIN! (Akash: 4321, Vishwa: 1234, Rithish: 1830)', 'danger');
+        showToast('Incorrect PIN! Please try again.', 'danger');
         if (pinInput) pinInput.value = '';
         return;
       }
