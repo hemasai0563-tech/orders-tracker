@@ -1,7 +1,7 @@
 // ==============================================================================
 // RAD Retail & Fleet Command - Service Worker (Lock-Screen & Background Alerts)
 // ==============================================================================
-const CACHE_NAME = 'rad-fleet-sw-v1';
+const CACHE_NAME = 'rad-fleet-sw-v2';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
@@ -11,10 +11,11 @@ self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim());
 });
 
-// Handle clicking notifications on device lock screen or status bar
+// Handle clicking notifications or action buttons on device lock screen / status bar
 self.addEventListener('notificationclick', event => {
   event.notification.close();
   const targetInvoice = event.notification.data ? event.notification.data.invoiceNo : null;
+  const action = event.action;
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
@@ -22,7 +23,10 @@ self.addEventListener('notificationclick', event => {
         if ('focus' in client) {
           client.focus();
           if (targetInvoice) {
-            client.postMessage({ type: 'FOCUS_DELIVERY_ORDER', invoiceNo: targetInvoice });
+            client.postMessage({
+              type: action === 'accept' ? 'ACCEPT_DELIVERY_ORDER' : 'FOCUS_DELIVERY_ORDER',
+              invoiceNo: targetInvoice
+            });
           }
           return;
         }
@@ -44,11 +48,15 @@ self.addEventListener('push', event => {
         body: data.body || 'A new delivery order has arrived.',
         icon: 'logo.png',
         badge: 'logo.png',
-        vibrate: [400, 150, 400, 150, 600],
+        vibrate: [500, 200, 500, 200, 800, 200, 500, 200, 800],
         requireInteraction: true,
         tag: data.tag || 'delivery-order',
         renotify: true,
-        data: data
+        data: data,
+        actions: [
+          { action: 'accept', title: '🚀 Accept & Ride' },
+          { action: 'view', title: '👁️ Open Order' }
+        ]
       };
       event.waitUntil(self.registration.showNotification(title, options));
     } catch (e) {

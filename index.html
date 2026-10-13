@@ -8,6 +8,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <title>rad. Retail & Fleet Command</title>
+
+  <!-- App Favicon & Brand Icons -->
+  <link rel="icon" type="image/png" href="logo.png" />
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="shortcut icon" type="image/png" href="logo.png" />
+  <link rel="apple-touch-icon" href="logo.png" />
   
   <!-- Modern Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -199,10 +205,19 @@
           <span class="sync-status-text" id="sync-status-label">Synced</span>
         </button>
 
-        <!-- User Role Profile Pill -->
-        <div class="user-role-pill" onclick="openProfileMenu()" id="header-user-badge">
-          <i class="fa-solid fa-user-circle"></i>
-          <span id="header-role-text">Ops</span>
+        <!-- Store Activity Audit Trail Button -->
+        <button id="btn-header-audit-trail" class="btn-icon-pill" title="Store Activity & Change Audit Trail" onclick="openStoreAuditTrailModal()">
+          <i class="fa-solid fa-clock-rotate-left text-primary"></i>
+          <span class="sync-status-text">Audit</span>
+        </button>
+
+        <!-- User Role & Profile Pill (High Visibility with Name) -->
+        <div class="user-role-pill user-profile-header-chip" onclick="openProfileMenu()" id="header-user-badge" title="Click to view Profile & Account Details">
+          <span class="header-user-avatar-badge" id="header-avatar-icon"><i class="fa-solid fa-user-circle"></i></span>
+          <div class="header-user-labels">
+            <span class="header-user-fullname" id="header-user-fullname">Akash</span>
+            <span class="header-user-role-sub" id="header-role-text">Master Admin</span>
+          </div>
         </div>
 
         <!-- Quick Logout / Exit Button -->
@@ -458,6 +473,23 @@
             <div class="agent-kpi-card kpi-accent-green">
               <div class="agent-kpi-val" id="agent-kpi-delivered">0</div>
               <div class="agent-kpi-lbl">Done Today</div>
+          </div>
+
+          <!-- Mobile Alert & Lock-Screen Status Banner -->
+          <div class="agent-mobile-alert-banner">
+            <div class="alert-banner-left">
+              <div class="alert-banner-icon pulse-alert"><i class="fa-solid fa-mobile-screen-button"></i></div>
+              <div class="alert-banner-text">
+                <span class="alert-banner-title">Lock-Screen & Away Alerts Active</span>
+                <span class="alert-banner-status" id="agent-lockscreen-status">
+                  <i class="fa-solid fa-circle-check text-success"></i> Vibrates & Rings when phone is locked or away
+                </span>
+              </div>
+            </div>
+            <div class="alert-banner-right">
+              <button type="button" class="btn-test-lock-alert" onclick="testMobileLockScreenAlert()" title="Test alert when phone is locked or in pocket">
+                <i class="fa-solid fa-bell"></i> Test Lock Alert
+              </button>
             </div>
           </div>
         </div>
@@ -983,6 +1015,10 @@
                   <i class="fa-solid fa-chart-line-down"></i> <span>Sale Drop</span>
                   <span class="pill-counter counter-red" id="badge-count-sale-drop">0</span>
                 </button>
+                <button type="button" class="sales-tab-pill" id="tab-btn-demand-matrix" onclick="switchSalesTab('demand-matrix')">
+                  <i class="fa-solid fa-chart-pie"></i> <span>Category & Velocity</span>
+                  <span class="pill-counter counter-emerald" id="badge-count-demand-matrix">NEW</span>
+                </button>
               </div>
             </div>
 
@@ -1398,6 +1434,144 @@
               </div>
             </div>
 
+            <!-- ==================== TAB 5: CATEGORY & DEMAND VELOCITY INTELLIGENCE ==================== -->
+            <div id="sales-tab-content-demand-matrix" class="sales-tab-pane">
+              <!-- Tab Header / Actions Bar -->
+              <div class="dash-card-header-row mb-3" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                <div>
+                  <h3 style="margin:0; font-size:16px; font-weight:800; color:var(--text-heading);">
+                    <i class="fa-solid fa-chart-pie text-primary"></i> Category Intelligence & Demand Velocity
+                  </h3>
+                  <small style="color:var(--text-muted); font-size:12px;">Revenue share by department, velocity quadrant classification, and peak hourly rush distribution</small>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <div class="input-with-icon" style="max-width:200px;">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="category-search-input" placeholder="Search category..." oninput="handleCategorySearch(this.value)" style="height:32px; font-size:12px; padding-left:28px;" />
+                  </div>
+                  <select id="category-sort-select" onchange="handleCategorySortChange(this.value)" style="height:32px; font-size:12px; border-radius:8px; border:1px solid #cbd5e1; padding:0 8px; font-weight:700;">
+                    <option value="revenue_desc">Sort: Highest Revenue</option>
+                    <option value="qty_desc">Sort: Highest Quantity</option>
+                    <option value="ticket_desc">Sort: Highest Avg Price</option>
+                    <option value="name_asc">Sort: Name (A-Z)</option>
+                  </select>
+                  <button type="button" class="btn btn-outline" style="height:32px; padding:0 10px; font-size:11.5px; border-radius:8px;" onclick="exportCategoryAnalyticsToCSV()">
+                    <i class="fa-solid fa-download"></i> CSV
+                  </button>
+                </div>
+              </div>
+
+              <!-- 4 Category KPI Cards -->
+              <div class="sales-kpi-grid-4">
+                <div class="sales-kpi-box kpi-box-emerald">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Active Categories</span>
+                    <h3 id="cat-kpi-active-count">0</h3>
+                    <span class="sales-kpi-sub">Total product departments</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-blue">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-crown text-amber"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Revenue Champion</span>
+                    <h3 id="cat-kpi-top-category" style="font-size:16px;">-</h3>
+                    <span class="sales-kpi-sub" id="cat-kpi-top-revenue">₹0 (0% of sales)</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-purple">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-bolt"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Volume Velocity Leader</span>
+                    <h3 id="cat-kpi-fastest-category" style="font-size:16px;">-</h3>
+                    <span class="sales-kpi-sub" id="cat-kpi-fastest-units">0 units sold</span>
+                  </div>
+                </div>
+
+                <div class="sales-kpi-box kpi-box-amber">
+                  <div class="sales-kpi-icon"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                  <div class="sales-kpi-details">
+                    <span class="sales-kpi-label">Highest Avg Item Ticket</span>
+                    <h3 id="cat-kpi-highest-ticket">₹0</h3>
+                    <span class="sales-kpi-sub" id="cat-kpi-highest-category">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Two Column Analytics Grid -->
+              <div class="demand-analytics-grid mt-3">
+                <!-- Left: Category Share Horizontal Visualizer -->
+                <div class="dash-card">
+                  <div class="card-header">
+                    <div>
+                      <h4 class="card-title"><i class="fa-solid fa-chart-column text-primary"></i> Category Revenue Contribution Share</h4>
+                      <p class="card-subtitle">Visual ranking of catalog turnover by product department</p>
+                    </div>
+                  </div>
+                  <div id="chart-category-share-container" class="chart-container">
+                    <!-- Rendered dynamically -->
+                  </div>
+                </div>
+
+                <!-- Right: Hourly Order Rush & Demand Velocity Heatmap -->
+                <div class="dash-card">
+                  <div class="card-header">
+                    <div>
+                      <h4 class="card-title"><i class="fa-solid fa-fire-flame-curved text-danger"></i> Peak Ordering Rush & Demand Velocity</h4>
+                      <p class="card-subtitle">Hourly distribution pattern across store order volume</p>
+                    </div>
+                  </div>
+                  <div id="chart-hourly-rush-container" class="chart-container">
+                    <!-- Rendered dynamically -->
+                  </div>
+                </div>
+              </div>
+
+              <!-- Strategic Velocity Quadrant -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <div>
+                    <h4 class="card-title"><i class="fa-solid fa-compass text-primary"></i> Category Strategic Velocity Quadrant</h4>
+                    <p class="card-subtitle">Categorization by sales volume, transaction velocity and revenue contribution</p>
+                  </div>
+                </div>
+                <div class="velocity-quadrant-grid" id="quadrant-matrix-container">
+                  <!-- Rendered dynamically -->
+                </div>
+              </div>
+
+              <!-- Category Deep-Dive Table -->
+              <div class="dash-card mt-3">
+                <div class="card-header">
+                  <div>
+                    <h4 class="card-title"><i class="fa-solid fa-table-list text-primary"></i> Comprehensive Category Performance Ledger</h4>
+                    <p class="card-subtitle">SKU depth, volume, revenue share, and average item price per category</p>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="sales-dash-table" id="tbl-category-analytics">
+                    <thead>
+                      <tr>
+                        <th style="width:40px; text-align:center;">#</th>
+                        <th>Category Name</th>
+                        <th style="text-align:center;">Active SKUs</th>
+                        <th style="text-align:right;">Quantity Sold</th>
+                        <th style="text-align:right;">Sales Value (₹)</th>
+                        <th style="text-align:right;">Avg Ticket / Unit</th>
+                        <th style="text-align:right;">Share of Sales</th>
+                        <th style="text-align:center;">Velocity Classification</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tbody-category-analytics">
+                      <!-- Rendered dynamically -->
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
           </div>
           <!-- ==================== END SALES DASHBOARD ROOT ==================== -->
 
@@ -1799,6 +1973,17 @@
             </div>
           </div>
 
+          <!-- User Change History & Audit Trail Section -->
+          <div class="modal-audit-box mt-3">
+            <div class="audit-box-header">
+              <label><i class="fa-solid fa-clock-rotate-left text-primary"></i> Change History & User Audit Trail</label>
+              <span class="audit-last-modified-tag" id="modal-last-modified-tag">Modified by: Staff</span>
+            </div>
+            <div id="modal-bill-audit-timeline" class="audit-timeline-list">
+              <!-- Dynamically populated from bill.activityLog -->
+            </div>
+          </div>
+
           <!-- ONE-TAP ACTION BUTTONS -->
           <div class="sheet-action-buttons">
             <h5 class="action-heading"><i class="fa-solid fa-bolt text-warning"></i> Instant Actions</h5>
@@ -1823,10 +2008,53 @@
               </button>
             </div>
 
+            <!-- Cancel Order Button (Operations and Owner Only - Hidden for Delivery Agent) -->
+            <button class="btn btn-outline btn-danger btn-block mt-3 hidden" id="btn-action-cancel-order" onclick="promptCancelOrder()">
+              <i class="fa-solid fa-ban"></i> Cancel Order (Ops & Owner Only)
+            </button>
+
             <!-- Owner-only Delete Button -->
-            <button class="btn btn-outline btn-danger btn-block mt-3 hidden" id="btn-owner-delete-bill" onclick="executeOwnerDeleteBill()">
+            <button class="btn btn-outline btn-danger btn-block mt-2 hidden" id="btn-owner-delete-bill" onclick="executeOwnerDeleteBill()">
               <i class="fa-solid fa-trash-can"></i> Delete Bill (Owner Only)
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== GLOBAL STORE AUDIT TRAIL MODAL ==================== -->
+    <div id="store-audit-modal" class="modal-overlay" onclick="closeStoreAuditTrailModal(event)">
+      <div class="modal-card modal-lg" onclick="event.stopPropagation()">
+        <div class="modal-header">
+          <div>
+            <h3><i class="fa-solid fa-clock-rotate-left text-primary"></i> Store Audit Trail & Change Ledger</h3>
+            <small>Live chronological log of all actions, updates & assignments recorded by user profile</small>
+          </div>
+          <button class="btn-close" onclick="closeStoreAuditTrailModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap;">
+            <div class="input-with-icon" style="max-width:260px;">
+              <i class="fa-solid fa-magnifying-glass"></i>
+              <input type="text" id="audit-trail-filter-input" placeholder="Filter by user or invoice..." oninput="filterStoreAuditTrail(this.value)" style="height:32px; font-size:12px;" />
+            </div>
+            <span class="badge badge-neutral" id="audit-trail-total-badge">0 total events</span>
+          </div>
+          <div class="table-responsive">
+            <table class="sales-dash-table" id="tbl-store-audit">
+              <thead>
+                <tr>
+                  <th style="width:130px;">Time</th>
+                  <th style="width:160px;">User Profile</th>
+                  <th style="width:90px;">Invoice</th>
+                  <th style="width:180px;">Action</th>
+                  <th>Details & Change Recorded</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-store-audit">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

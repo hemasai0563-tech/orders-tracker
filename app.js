@@ -1526,29 +1526,43 @@ function applyUserRoleUI() {
   const headerAvatarIcon = document.getElementById('header-avatar-icon');
   const headerDutyPill = document.getElementById('header-duty-pill');
   const headerDutyText = document.getElementById('header-duty-text');
+  const headerUserFullname = document.getElementById('header-user-fullname');
+
+  const displayName = appState.currentUser?.name || (isOwner ? 'Store Owner' : (isAgent ? (agentName || 'Delivery Agent') : 'Operations Executive'));
+  if (headerUserFullname) {
+    headerUserFullname.textContent = displayName;
+  }
 
   if (roleText) {
-    if (isOwner) roleText.textContent = 'Owner';
-    else if (isAgent) roleText.textContent = agentName ? agentName.split(' ')[0] : 'Agent';
-    else roleText.textContent = 'Ops';
+    if (isOwner) roleText.textContent = 'Master Admin';
+    else if (isAgent) roleText.textContent = 'Fleet Delivery';
+    else roleText.textContent = 'Ops Lead';
   }
 
   if (roleBadge) {
-    roleBadge.className = 'user-role-pill';
+    roleBadge.className = 'user-role-pill user-profile-header-chip';
     if (isOwner) roleBadge.classList.add('role-owner');
     else if (isAgent) roleBadge.classList.add('role-agent');
+    else roleBadge.classList.add('role-ops');
   }
 
   if (outletUserInfo) {
-    if (isOwner) outletUserInfo.textContent = `Owner: ${appState.currentUser?.name || 'Rithish'}`;
-    else if (isAgent) outletUserInfo.textContent = `Agent: ${agentName}`;
-    else outletUserInfo.textContent = 'Ops: rad. Express';
+    if (isOwner) outletUserInfo.textContent = `Owner: ${displayName}`;
+    else if (isAgent) outletUserInfo.textContent = `Agent: ${agentName || displayName}`;
+    else outletUserInfo.textContent = `Ops: ${displayName}`;
   }
 
   if (headerAvatarIcon) {
     if (isAgent) headerAvatarIcon.innerHTML = '<i class="fa-solid fa-person-biking"></i>';
-    else if (isOwner) headerAvatarIcon.innerHTML = '<i class="fa-solid fa-crown"></i>';
-    else headerAvatarIcon.innerHTML = '<i class="fa-solid fa-boxes-packing"></i>';
+    else if (isOwner) headerAvatarIcon.innerHTML = '<i class="fa-solid fa-crown text-amber"></i>';
+    else headerAvatarIcon.innerHTML = '<i class="fa-solid fa-user-gear text-primary"></i>';
+  }
+
+  // Manage mobile wake lock for delivery agents
+  if (isAgent) {
+    enableMobileDeliveryWakeLock();
+  } else {
+    releaseMobileDeliveryWakeLock();
   }
 
   // Header Duty Pill for Agents & Ops
@@ -1841,6 +1855,8 @@ function getDeliveryBadgeHtml(status) {
     return `<span class="badge badge-green"><i class="fa-solid fa-circle-check"></i> Delivered</span>`;
   } else if (status === 'Out for Delivery') {
     return `<span class="badge badge-yellow"><i class="fa-solid fa-truck-fast"></i> Out for Delivery</span>`;
+  } else if (status === 'Cancelled') {
+    return `<span class="badge badge-neutral" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5;"><i class="fa-solid fa-ban"></i> Cancelled</span>`;
   } else {
     return `<span class="badge badge-red"><i class="fa-solid fa-clock"></i> Pending</span>`;
   }
@@ -1853,6 +1869,8 @@ function getPaymentBadgeHtml(paymentStatus, paymentMode) {
     else if (paymentMode === 'QR') modeIcon = 'fa-solid fa-qrcode';
     else if (paymentMode === 'CARD') modeIcon = 'fa-solid fa-credit-card';
     return `<span class="badge badge-green"><i class="${modeIcon}"></i> Paid (${paymentMode || 'QR'})</span>`;
+  } else if (paymentStatus === 'Cancelled') {
+    return `<span class="badge badge-neutral" style="background:#f1f5f9; color:#64748b;"><i class="fa-solid fa-ban"></i> Cancelled</span>`;
   } else {
     return `<span class="badge badge-red"><i class="fa-solid fa-circle-exclamation"></i> UNPAID</span>`;
   }
@@ -1861,6 +1879,9 @@ function getPaymentBadgeHtml(paymentStatus, paymentMode) {
 function getAgentBadgeHtml(agentName) {
   if (!agentName || agentName === 'Unassigned') {
     return `<span class="badge badge-neutral"><i class="fa-solid fa-user-xmark"></i> Unassigned</span>`;
+  }
+  if (agentName === 'Cancelled') {
+    return `<span class="badge badge-neutral" style="color:#ef4444;"><i class="fa-solid fa-ban"></i> Cancelled</span>`;
   }
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
   const currentAgent = appState.currentUser?.agentName;
@@ -1873,6 +1894,7 @@ function getAgentBadgeHtml(agentName) {
 function getCardBorderClass(deliveryStatus) {
   if (deliveryStatus === 'Delivered') return 'border-status-delivered';
   if (deliveryStatus === 'Out for Delivery') return 'border-status-out';
+  if (deliveryStatus === 'Cancelled') return 'border-status-cancelled';
   return 'border-status-pending';
 }
 
@@ -1973,8 +1995,13 @@ function handleCreateBill(event) {
     paymentProof: '',
     paymentProofTime: '',
     daysPending: calculateDaysPending(billedDate, 'Unpaid'),
-    remarks: remarks
+    remarks: remarks,
+    activityLog: [],
+    lastModifiedBy: appState.currentUser?.name || 'Staff',
+    lastModifiedAt: new Date().toISOString()
   };
+
+  recordBillActivity(newBill, 'Bill Created', `Invoice created for Flat ${newBill.flatNo}, Amount ₹${newBill.billAmount}, assigned to ${newBill.deliveryAgent}`);
 
   appState.bills.unshift(newBill);
   saveBillsToLocal();
@@ -2075,8 +2102,13 @@ function renderPendingDeliveries() {
     return;
   }
 
-  // All pending bills across the store
-  const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && b.paymentStatus !== 'Paid');
+  // All pending bills across the store (excluding delivered and cancelled)
+  const allStorePendingBills = appState.bills.filter(b => 
+    b.deliveryStatus !== 'Delivered' && 
+    b.deliveryStatus !== 'Cancelled' && 
+    b.paymentStatus !== 'Paid' && 
+    b.paymentStatus !== 'Cancelled'
+  );
   allStorePendingBills.sort((a, b) => new Date(a.billedDate) - new Date(b.billedDate));
 
   let pendingBills = allStorePendingBills;
@@ -2198,7 +2230,14 @@ function renderPendingDeliveries() {
     return;
   }
 
+  const scrollY = container.scrollTop;
+  const mainContainer = document.getElementById('main-scroll-container');
+  const mainScrollY = mainContainer ? mainContainer.scrollTop : 0;
+
   container.innerHTML = pendingBills.map(b => renderBillCardWithQuickActions(b, 'delivery')).join('');
+
+  container.scrollTop = scrollY;
+  if (mainContainer) mainContainer.scrollTop = mainScrollY;
 }
 
 // ==========================================
@@ -2226,7 +2265,7 @@ function renderUnpaidBills() {
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
   const agentName = appState.currentUser?.agentName;
 
-  let unpaidBills = appState.bills.filter(b => b.paymentStatus !== 'Paid');
+  let unpaidBills = appState.bills.filter(b => b.paymentStatus !== 'Paid' && b.paymentStatus !== 'Cancelled');
   unpaidBills.sort((a, b) => b.daysPending - a.daysPending);
 
   const totalOutstanding = unpaidBills.reduce((sum, b) => sum + (Number(b.balance) || 0), 0);
@@ -2269,7 +2308,14 @@ function renderUnpaidBills() {
     return;
   }
 
+  const scrollY = container.scrollTop;
+  const mainContainer = document.getElementById('main-scroll-container');
+  const mainScrollY = mainContainer ? mainContainer.scrollTop : 0;
+
   container.innerHTML = displayList.map(b => renderBillCardWithQuickActions(b, 'payment')).join('');
+
+  container.scrollTop = scrollY;
+  if (mainContainer) mainContainer.scrollTop = mainScrollY;
 }
 
 function handleUnpaidBillsSearch(val) {
@@ -2830,7 +2876,7 @@ function renderSingleBillCardHtml(bill) {
   const agentBadge = getAgentBadgeHtml(bill.deliveryAgent);
 
   return `
-    <div class="bill-card ${borderClass}" onclick="openBillDetailModal('${bill.invoiceNo}')">
+    <div id="bill-card-${bill.invoiceNo}" class="bill-card ${borderClass}" data-invoice="${bill.invoiceNo}" onclick="openBillDetailModal('${bill.invoiceNo}')">
       <div class="card-top-row">
         <div class="card-flat-info">
           <span class="flat-badge">
@@ -2940,7 +2986,7 @@ function renderBillCardWithQuickActions(bill, context) {
     : '';
 
   return `
-    <div class="bill-card ${borderClass}" onclick="openBillDetailModal('${bill.invoiceNo}')">
+    <div id="bill-card-${bill.invoiceNo}" class="bill-card ${borderClass}" data-invoice="${bill.invoiceNo}" onclick="openBillDetailModal('${bill.invoiceNo}')">
       <div class="card-top-row">
         <div class="card-flat-info">
           <span class="flat-badge">
@@ -3080,8 +3126,13 @@ function openBillDetailModal(invoiceNo) {
   const btnPay = document.getElementById('btn-action-mark-paid');
 
   const isDelivered = bill.deliveryStatus === 'Delivered' || bill.paymentStatus === 'Paid';
+  const isCancelled = bill.deliveryStatus === 'Cancelled' || bill.paymentStatus === 'Cancelled';
 
-  if (!isDelivered) {
+  if (isCancelled) {
+    if (btnOut) btnOut.classList.add('hidden');
+    if (btnDelivered) btnDelivered.classList.add('hidden');
+    if (btnPay) btnPay.classList.add('hidden');
+  } else if (!isDelivered) {
     // Before Delivery: Show delivery controls, HIDE payment button
     if (btnOut) {
       if (bill.deliveryStatus === 'Pending') btnOut.classList.remove('hidden');
@@ -3103,13 +3154,24 @@ function openBillDetailModal(invoiceNo) {
 
   const isOwner = appState.currentUser && appState.currentUser.role === 'owner';
   const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const isOpsOrOwner = !isAgent; // Operations executive or Store Owner
 
   const btnOwnerEditAmt = document.getElementById('btn-owner-edit-amount');
   const btnOwnerDel = document.getElementById('btn-owner-delete-bill');
+  const btnCancelOrder = document.getElementById('btn-action-cancel-order');
   const reassignWrap = document.getElementById('modal-agent-reassign-wrap');
 
+  // Cancel order option: Strictly for Operations & Store Owner (hidden for Delivery Agent)
+  if (btnCancelOrder) {
+    if (isOpsOrOwner && bill.deliveryStatus !== 'Cancelled') {
+      btnCancelOrder.classList.remove('hidden');
+    } else {
+      btnCancelOrder.classList.add('hidden');
+    }
+  }
+
   if (btnOwnerEditAmt) {
-    if (isOwner) btnOwnerEditAmt.classList.remove('hidden');
+    if (isOwner && !isCancelled) btnOwnerEditAmt.classList.remove('hidden');
     else btnOwnerEditAmt.classList.add('hidden');
   }
   if (btnOwnerDel) {
@@ -3117,8 +3179,20 @@ function openBillDetailModal(invoiceNo) {
     else btnOwnerDel.classList.add('hidden');
   }
   if (reassignWrap) {
-    if (isAgent) reassignWrap.classList.add('hidden');
+    if (isAgent || isCancelled) reassignWrap.classList.add('hidden');
     else reassignWrap.classList.remove('hidden');
+  }
+
+  // Change History & User Audit Trail in Bill Detail
+  const lastModTag = document.getElementById('modal-last-modified-tag');
+  const auditTimeline = document.getElementById('modal-bill-audit-timeline');
+  if (lastModTag) {
+    const actor = bill.lastModifiedBy || 'Staff';
+    const timeStr = bill.lastModifiedAt ? formatAuditTime(bill.lastModifiedAt) : 'Initial Record';
+    lastModTag.textContent = `Modified by: ${actor} (${timeStr})`;
+  }
+  if (auditTimeline) {
+    renderBillActivityTimeline(bill, auditTimeline);
   }
 
   const modal = document.getElementById('bill-detail-modal');
@@ -3137,20 +3211,35 @@ function executeReassignAgent(newAgent) {
   const bill = appState.bills.find(b => b.invoiceNo === appState.selectedInvoiceNo);
   if (!bill) return;
 
+  const oldAgent = bill.deliveryAgent || 'Unassigned';
   bill.deliveryAgent = newAgent;
   bill.lastUpdated = new Date().toISOString();
+
+  // Audit recording
+  recordBillActivity(bill, 'Delivery Agent Assigned', `Reassigned delivery agent from "${oldAgent}" to "${newAgent}"`);
+
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
 
   const displayEl = document.getElementById('modal-assigned-agent-display');
   if (displayEl) displayEl.textContent = newAgent;
+
+  // Refresh audit timeline inside modal
+  const lastModTag = document.getElementById('modal-last-modified-tag');
+  const auditTimeline = document.getElementById('modal-bill-audit-timeline');
+  if (lastModTag) lastModTag.textContent = `Modified by: ${bill.lastModifiedBy} (Just now)`;
+  if (auditTimeline) renderBillActivityTimeline(bill, auditTimeline);
+
   showToast(`Assigned #${bill.invoiceNo} to ${newAgent}`, 'success');
 
+  // Trigger high priority mobile alert if assigned to active agent
   if (appState.currentUser?.role === 'agent' && isSameAgent(newAgent, appState.currentUser.agentName)) {
+    triggerHighPriorityDeliveryMobileNotification(bill);
     startOrderAlertRingAndModal(bill, 10);
   }
 
-  renderApp();
+  // Surgical in-place DOM update prevents screen fluttering
+  updateSingleBillCardInDOM(bill);
 }
 
 // Action: Mark Out for Delivery
@@ -3161,11 +3250,12 @@ function executeMarkOutForDelivery() {
 
   bill.deliveryStatus = 'Out for Delivery';
   bill.lastUpdated = new Date().toISOString();
+  recordBillActivity(bill, 'Dispatched (Out for Delivery)', 'Order marked out for delivery');
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
   showToast(`Bill #${bill.invoiceNo} is Out for Delivery! 🚚`, 'warning');
   openBillDetailModal(bill.invoiceNo);
-  renderApp();
+  updateSingleBillCardInDOM(bill);
 }
 
 function quickMarkOutForDelivery(invoiceNo) {
@@ -3173,10 +3263,11 @@ function quickMarkOutForDelivery(invoiceNo) {
   if (!bill) return;
   bill.deliveryStatus = 'Out for Delivery';
   bill.lastUpdated = new Date().toISOString();
+  recordBillActivity(bill, 'Dispatched (Out for Delivery)', 'Order marked out for delivery');
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
   showToast(`Flat ${bill.flatNo} Out for Delivery!`, 'warning');
-  renderApp();
+  updateSingleBillCardInDOM(bill);
 }
 
 function quickClaimOrder(invoiceNo) {
@@ -3188,10 +3279,11 @@ function quickClaimOrder(invoiceNo) {
   bill.deliveryAgent = agentName;
   bill.deliveryStatus = 'Out for Delivery';
   bill.lastUpdated = new Date().toISOString();
+  recordBillActivity(bill, 'Order Self-Claimed', `${agentName} claimed order for delivery`);
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
   showToast(`🟢 Claimed #${bill.invoiceNo} (Flat ${bill.flatNo}) for delivery!`, 'success');
-  renderApp();
+  updateSingleBillCardInDOM(bill);
 }
 
 // ==========================================
@@ -3356,6 +3448,7 @@ function handleDeliveryProofSubmit(event) {
   bill.deliveryProof = appState.tempDeliveryProofData;
   bill.deliveryProofTime = `${timestamp}${notes ? ` (${notes})` : ''}`;
   bill.lastUpdated = new Date().toISOString();
+  recordBillActivity(bill, 'Delivery Confirmed', `Delivery photo proof captured (${bill.deliveryProofTime})`);
 
   if (appState.knownAssignedInvoiceNos) {
     appState.knownAssignedInvoiceNos.delete(String(bill.invoiceNo).trim());
@@ -3607,6 +3700,7 @@ function handleSelectPaymentModeSubmit(event) {
         b.deliveryStatus = 'Delivered';
         b.deliveredDate = b.deliveredDate || getTodayISODate();
         b.lastUpdated = new Date().toISOString();
+        recordBillActivity(b, 'Payment Collected', `Batch settled ₹${b.billAmount} via ${mode}`);
         triggerAutoCloudSync(b, 'upsert_bill');
       });
       showToast(`🎉 Cleared ${selectedBills.length} Invoices for Flat ${appState.currentViewingFlat} (${formatCurrency(totalAmt)}) via ${mode}! 💰`, 'success');
@@ -3634,6 +3728,7 @@ function handleSelectPaymentModeSubmit(event) {
     bill.balance = bill.billAmount;
     bill.daysPending = calculateDaysPending(bill.billedDate, 'Unpaid');
     bill.lastUpdated = new Date().toISOString();
+    recordBillActivity(bill, 'Payment Marked Unpaid', `Invoice reset to UNPAID status`);
     showToast(`Invoice #${bill.invoiceNo} marked UNPAID`, 'warning');
   } else {
     bill.paymentStatus = 'Paid';
@@ -3644,6 +3739,7 @@ function handleSelectPaymentModeSubmit(event) {
     bill.deliveryStatus = 'Delivered';
     bill.deliveredDate = bill.deliveredDate || getTodayISODate();
     bill.lastUpdated = new Date().toISOString();
+    recordBillActivity(bill, 'Payment Collected', `Collected ₹${bill.billAmount} via ${mode}`);
     showToast(`Collected ${formatCurrency(bill.billAmount)} via ${mode}! 💰`, 'success');
   }
 
@@ -3707,13 +3803,21 @@ function saveBillRemarks() {
 
   const newRemarks = document.getElementById('modal-remarks-input').value.trim();
   bill.remarks = newRemarks;
+  recordBillActivity(bill, 'Remarks Updated', `Notes: ${newRemarks || 'Remarks cleared'}`);
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
 
   document.getElementById('modal-remarks-display').textContent = newRemarks || 'No remarks recorded.';
+
+  // Refresh audit timeline inside modal
+  const lastModTag = document.getElementById('modal-last-modified-tag');
+  const auditTimeline = document.getElementById('modal-bill-audit-timeline');
+  if (lastModTag) lastModTag.textContent = `Modified by: ${bill.lastModifiedBy} (Just now)`;
+  if (auditTimeline) renderBillActivityTimeline(bill, auditTimeline);
+
   toggleEditRemarks();
   showToast('Remarks updated!', 'success');
-  renderApp();
+  updateSingleBillCardInDOM(bill);
 }
 
 // Owner Rules: Edit Bill Amount
@@ -3735,14 +3839,16 @@ function promptOwnerEditBillAmount() {
     return;
   }
 
+  const oldAmount = bill.billAmount;
   bill.billAmount = parseFloat(newAmount.toFixed(2));
+  recordBillActivity(bill, 'Bill Amount Modified', `Amount updated from ₹${oldAmount} to ₹${bill.billAmount}`);
   recalculateBill(bill);
   saveBillsToLocal();
   triggerAutoCloudSync(bill, 'upsert_bill');
 
   showToast(`Bill amount updated to ${formatCurrency(bill.billAmount)}`, 'success');
   openBillDetailModal(bill.invoiceNo);
-  renderApp();
+  updateSingleBillCardInDOM(bill);
 }
 
 // Owner Rules: Delete Bill
@@ -3764,6 +3870,43 @@ function executeOwnerDeleteBill() {
   closeBillDetailModal();
   showToast(`Bill #${invoice} deleted.`, 'info');
   renderApp();
+}
+
+// Order Cancellation Logic (Restricted to Operations Executive and Store Owner Only)
+function promptCancelOrder() {
+  if (!appState.currentUser || appState.currentUser.role === 'agent') {
+    showToast('Permission Denied: Only Operations Executive and Store Owner can cancel orders.', 'danger');
+    return;
+  }
+
+  if (!appState.selectedInvoiceNo) return;
+  const bill = appState.bills.find(b => b.invoiceNo === appState.selectedInvoiceNo);
+  if (!bill) return;
+
+  if (bill.deliveryStatus === 'Cancelled') {
+    showToast('This order is already cancelled.', 'info');
+    return;
+  }
+
+  const reason = prompt(`⚠️ CANCEL ORDER #${bill.invoiceNo} (Flat ${bill.flatNo}):\nPlease enter cancellation reason:`, 'Customer cancelled order');
+  if (reason === null) return; // User pressed Cancel in prompt
+
+  const trimmedReason = reason.trim() || 'Cancelled by staff';
+
+  bill.deliveryStatus = 'Cancelled';
+  bill.paymentStatus = 'Cancelled';
+  bill.deliveryAgent = 'Cancelled';
+  bill.remarks = (bill.remarks ? bill.remarks + ' | ' : '') + `[Cancelled: ${trimmedReason}]`;
+  bill.lastUpdated = new Date().toISOString();
+
+  recordBillActivity(bill, 'Order Cancelled', `Order cancelled by ${appState.currentUser?.name || 'Staff'}. Reason: ${trimmedReason}`);
+
+  saveBillsToLocal();
+  triggerAutoCloudSync(bill, 'upsert_bill');
+
+  showToast(`🚫 Order #${bill.invoiceNo} has been CANCELLED!`, 'warning');
+  closeBillDetailModal();
+  updateSingleBillCardInDOM(bill);
 }
 
 // ==========================================
@@ -4045,6 +4188,9 @@ function mergeCloudBills(cloudBills) {
         paymentProofTime: cb.paymentProofTime || '',
         daysPending: Number(cb.daysPending) || 0,
         remarks: cb.remarks || '',
+        activityLog: Array.isArray(cb.activityLog) ? cb.activityLog : [],
+        lastModifiedBy: cb.lastModifiedBy || 'Staff',
+        lastModifiedAt: cb.lastModifiedAt || cb.lastUpdated || '',
         lastUpdated: cb.lastUpdated || new Date().toISOString()
       };
       localMap.set(invKey, newBill);
@@ -4076,6 +4222,11 @@ function mergeCloudBills(cloudBills) {
         if (cb.paymentProofTime) existing.paymentProofTime = cb.paymentProofTime;
         existing.daysPending = Number(cb.daysPending) || existing.daysPending;
         existing.remarks = cb.remarks !== undefined ? cb.remarks : existing.remarks;
+        if (Array.isArray(cb.activityLog) && cb.activityLog.length > (existing.activityLog || []).length) {
+          existing.activityLog = cb.activityLog;
+        }
+        if (cb.lastModifiedBy) existing.lastModifiedBy = cb.lastModifiedBy;
+        if (cb.lastModifiedAt) existing.lastModifiedAt = cb.lastModifiedAt;
         existing.lastUpdated = cb.lastUpdated || new Date().toISOString();
         changesCount++;
       }
@@ -4098,7 +4249,8 @@ function mergeCloudBills(cloudBills) {
     recalculateAllBills();
     saveBillsToLocal();
     updateBadgeCounts();
-    if (!isOrderAlertActive) {
+    const isAnyModalActive = document.querySelector('.modal-overlay.active');
+    if (!isOrderAlertActive && !isAnyModalActive) {
       renderCurrentScreen();
     }
   }
@@ -5895,6 +6047,413 @@ function centerFleetMap() {
     appState.fleetMap.setView([loc.lat, loc.lng], 15, { animate: true });
     showToast('Centered map on your active location', 'info');
   }
+}
+
+// ==============================================================================
+// 22. USER PROFILE AUDIT TRAIL & CHANGE LEDGER ENGINE
+// ==============================================================================
+function recordBillActivity(bill, action, details) {
+  if (!bill) return;
+  if (!Array.isArray(bill.activityLog)) {
+    bill.activityLog = [];
+  }
+  const actorName = appState.currentUser?.name || (appState.currentUser?.role === 'agent' ? appState.currentUser.agentName : 'Staff');
+  const actorRole = appState.currentUser?.role || 'ops';
+  const nowIso = new Date().toISOString();
+
+  const event = {
+    id: 'act_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    timestamp: nowIso,
+    actorName: actorName,
+    actorRole: actorRole,
+    action: action,
+    details: details || ''
+  };
+
+  bill.activityLog.unshift(event);
+  if (bill.activityLog.length > 50) bill.activityLog = bill.activityLog.slice(0, 50);
+  bill.lastModifiedBy = actorName;
+  bill.lastModifiedAt = nowIso;
+}
+
+function formatAuditTime(isoStr) {
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const now = Date.now();
+  const diffSec = Math.floor((now - d.getTime()) / 1000);
+  if (diffSec < 60) return 'Just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+  return `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} ${d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function renderBillActivityTimeline(bill, containerEl) {
+  if (!containerEl) return;
+  if (!bill.activityLog || bill.activityLog.length === 0) {
+    containerEl.innerHTML = `
+      <div style="padding:14px; text-align:center; color:var(--text-muted); font-size:12px;">
+        <i class="fa-solid fa-clock-rotate-left" style="margin-right:6px;"></i>
+        Initial creation recorded. Subsequent status, assignment, and payment changes by team members will be tracked here.
+      </div>
+    `;
+    return;
+  }
+
+  const getEventIcon = (action) => {
+    const act = (action || '').toLowerCase();
+    if (act.includes('created')) return { icon: 'fa-file-invoice', cls: 'icon-create' };
+    if (act.includes('assigned') || act.includes('claimed')) return { icon: 'fa-user-tag', cls: 'icon-assign' };
+    if (act.includes('out for delivery') || act.includes('dispatched')) return { icon: 'fa-motorcycle', cls: 'icon-out' };
+    if (act.includes('deliver')) return { icon: 'fa-camera', cls: 'icon-deliver' };
+    if (act.includes('payment') || act.includes('paid')) return { icon: 'fa-circle-dollar-to-slot', cls: 'icon-payment' };
+    if (act.includes('amount') || act.includes('modified') || act.includes('remarks')) return { icon: 'fa-pen-to-square', cls: 'icon-edit' };
+    return { icon: 'fa-circle-info', cls: 'icon-create' };
+  };
+
+  containerEl.innerHTML = bill.activityLog.map(evt => {
+    const ico = getEventIcon(evt.action);
+    return `
+      <div class="audit-event-item">
+        <div class="audit-event-icon ${ico.cls}">
+          <i class="fa-solid ${ico.icon}"></i>
+        </div>
+        <div class="audit-event-body">
+          <div class="audit-event-top">
+            <span class="audit-event-action">${escapeHTML(evt.action)}</span>
+            <span class="audit-event-time">${formatAuditTime(evt.timestamp)}</span>
+          </div>
+          <div class="audit-event-desc">${escapeHTML(evt.details)}</div>
+          <span class="audit-event-actor"><i class="fa-solid fa-user-check" style="font-size:9.5px; margin-right:3px;"></i>${escapeHTML(evt.actorName || 'Staff')}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+let storeAuditTrailFilter = '';
+
+function openStoreAuditTrailModal() {
+  const modal = document.getElementById('store-audit-modal');
+  if (!modal) return;
+  renderStoreAuditTrail();
+  modal.classList.add('active');
+}
+
+function closeStoreAuditTrailModal(e) {
+  if (e && e.target !== e.currentTarget && !e.target.classList.contains('btn-close')) return;
+  const modal = document.getElementById('store-audit-modal');
+  if (modal) modal.classList.remove('active');
+}
+
+function filterStoreAuditTrail(query) {
+  storeAuditTrailFilter = (query || '').trim().toLowerCase();
+  renderStoreAuditTrail();
+}
+
+function renderStoreAuditTrail() {
+  const tbody = document.getElementById('tbody-store-audit');
+  const countBadge = document.getElementById('audit-trail-total-badge');
+  if (!tbody) return;
+
+  const allEvents = [];
+  (appState.bills || []).forEach(bill => {
+    if (Array.isArray(bill.activityLog)) {
+      bill.activityLog.forEach(evt => {
+        allEvents.push({
+          ...evt,
+          invoiceNo: bill.invoiceNo,
+          flatNo: bill.flatNo
+        });
+      });
+    }
+  });
+
+  allEvents.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+
+  if (countBadge) countBadge.textContent = `${allEvents.length} total events`;
+
+  let filtered = allEvents;
+  if (storeAuditTrailFilter) {
+    filtered = allEvents.filter(e => 
+      (e.actorName && e.actorName.toLowerCase().includes(storeAuditTrailFilter)) ||
+      (e.invoiceNo && e.invoiceNo.toLowerCase().includes(storeAuditTrailFilter)) ||
+      (e.flatNo && e.flatNo.toLowerCase().includes(storeAuditTrailFilter)) ||
+      (e.action && e.action.toLowerCase().includes(storeAuditTrailFilter)) ||
+      (e.details && e.details.toLowerCase().includes(storeAuditTrailFilter))
+    );
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align:center; padding:32px; color:var(--text-muted);">
+          No audit activity records found.
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = filtered.slice(0, 100).map(e => `
+    <tr>
+      <td style="font-size:11px; color:var(--text-muted); white-space:nowrap;">
+        ${formatAuditTime(e.timestamp)}
+      </td>
+      <td>
+        <span class="audit-event-actor"><i class="fa-solid fa-user-check" style="margin-right:4px;"></i>${escapeHTML(e.actorName || 'Staff')}</span>
+        <span style="font-size:10px; color:var(--text-muted); display:block;">${escapeHTML(e.actorRole || 'ops')}</span>
+      </td>
+      <td>
+        <a href="javascript:void(0)" onclick="closeStoreAuditTrailModal(); openBillDetailModal('${e.invoiceNo}');" style="font-weight:700; color:var(--primary); text-decoration:none;">
+          #${escapeHTML(e.invoiceNo)}
+        </a>
+        <span style="font-size:10px; color:var(--text-muted); display:block;">Flat ${escapeHTML(e.flatNo || '')}</span>
+      </td>
+      <td style="font-weight:700; color:#0f172a;">
+        ${escapeHTML(e.action)}
+      </td>
+      <td style="font-size:12px; color:#475569;">
+        ${escapeHTML(e.details)}
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ==============================================================================
+// 23. FLICKER-FREE SURGICAL CARD UPDATES (ZERO SCREEN FLUTTERING)
+// ==============================================================================
+function updateSingleBillCardInDOM(bill) {
+  if (!bill || !bill.invoiceNo) return;
+  const cardEl = document.getElementById('bill-card-' + bill.invoiceNo);
+
+  updateBadgeCounts();
+  updatePendingCountersOnly();
+
+  if (!cardEl) return;
+
+  const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const agentName = appState.currentUser?.agentName;
+
+  let shouldRemoveFromView = false;
+  if (bill.deliveryStatus === 'Cancelled') {
+    shouldRemoveFromView = true;
+  } else if (appState.currentScreen === 'screen-pending-deliveries') {
+    if (isAgent && !isSameAgent(bill.deliveryAgent, agentName)) {
+      shouldRemoveFromView = true;
+    } else if (appState.filterPendingTab === 'Unassigned' && bill.deliveryAgent && bill.deliveryAgent !== 'Unassigned') {
+      shouldRemoveFromView = true;
+    } else if (appState.filterPendingTab === 'Pending' && bill.deliveryStatus !== 'Pending') {
+      shouldRemoveFromView = true;
+    } else if (appState.filterPendingTab === 'Out for Delivery' && bill.deliveryStatus !== 'Out for Delivery') {
+      shouldRemoveFromView = true;
+    }
+  }
+
+  if (shouldRemoveFromView) {
+    cardEl.style.transition = 'opacity 0.22s ease, transform 0.22s ease';
+    cardEl.style.opacity = '0';
+    cardEl.style.transform = 'scale(0.95)';
+    setTimeout(() => {
+      if (cardEl && cardEl.parentNode) cardEl.remove();
+    }, 220);
+  } else {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = renderBillCardWithQuickActions(bill, 'delivery');
+    const newCard = tempDiv.firstElementChild;
+    if (newCard) {
+      newCard.classList.add('card-just-accepted');
+      cardEl.replaceWith(newCard);
+      setTimeout(() => newCard.classList.remove('card-just-accepted'), 2500);
+    }
+  }
+}
+
+function updatePendingCountersOnly() {
+  const totalCountEl = document.getElementById('pending-delivery-count');
+  const countAll = document.getElementById('count-all-pending');
+  const countQueued = document.getElementById('count-queued');
+  const countOutRoad = document.getElementById('count-out-road');
+  const countUnassigned = document.getElementById('count-unassigned');
+
+  const isAgent = appState.currentUser && appState.currentUser.role === 'agent';
+  const agentName = appState.currentUser?.agentName;
+
+  const allStorePendingBills = appState.bills.filter(b => b.deliveryStatus !== 'Delivered' && b.paymentStatus !== 'Paid');
+
+  if (isAgent && agentName) {
+    const myAllocatedBills = allStorePendingBills.filter(b => isSameAgent(b.deliveryAgent, agentName));
+    const myQueued = myAllocatedBills.filter(b => b.deliveryStatus === 'Pending').length;
+    const myOnRoad = myAllocatedBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
+
+    if (totalCountEl) totalCountEl.textContent = myAllocatedBills.length;
+    if (countAll) countAll.textContent = myAllocatedBills.length;
+    if (countQueued) countQueued.textContent = myQueued;
+    if (countOutRoad) countOutRoad.textContent = myOnRoad;
+
+    const agentKpiAssigned = document.getElementById('agent-kpi-assigned');
+    if (agentKpiAssigned) agentKpiAssigned.textContent = myAllocatedBills.length;
+  } else {
+    const totalPending = allStorePendingBills.length;
+    const queuedCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Pending').length;
+    const outRoadCount = allStorePendingBills.filter(b => b.deliveryStatus === 'Out for Delivery').length;
+    const unassignedCount = allStorePendingBills.filter(b => !b.deliveryAgent || b.deliveryAgent === 'Unassigned').length;
+
+    if (totalCountEl) totalCountEl.textContent = totalPending;
+    if (countAll) countAll.textContent = totalPending;
+    if (countQueued) countQueued.textContent = queuedCount;
+    if (countOutRoad) countOutRoad.textContent = outRoadCount;
+    if (countUnassigned) countUnassigned.textContent = unassignedCount;
+  }
+}
+
+// ==============================================================================
+// 24. SCREEN WAKE LOCK & HIGH-PRIORITY LOCK-SCREEN MOBILE NOTIFICATIONS
+// ==============================================================================
+let mobileShiftWakeLock = null;
+
+async function enableMobileDeliveryWakeLock() {
+  try {
+    if ('wakeLock' in navigator && !mobileShiftWakeLock) {
+      mobileShiftWakeLock = await navigator.wakeLock.request('screen');
+      console.log('📱 Screen Wake Lock active for delivery agent shift');
+      mobileShiftWakeLock.addEventListener('release', () => {
+        mobileShiftWakeLock = null;
+      });
+      const statusEl = document.getElementById('agent-lockscreen-status');
+      if (statusEl) {
+        statusEl.innerHTML = '<i class="fa-solid fa-circle-check text-success"></i> Screen Wake Lock Active • Vibrates when locked';
+      }
+    }
+  } catch (err) {
+    console.warn('Wake Lock request:', err);
+  }
+}
+
+function releaseMobileDeliveryWakeLock() {
+  if (mobileShiftWakeLock) {
+    mobileShiftWakeLock.release().then(() => {
+      mobileShiftWakeLock = null;
+    }).catch(e => console.warn(e));
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && appState.currentUser?.role === 'agent') {
+    enableMobileDeliveryWakeLock();
+  }
+});
+
+function triggerHighPriorityDeliveryMobileNotification(bill) {
+  if (!bill) return;
+  const title = `🚨 NEW ORDER: Flat ${bill.flatNo}`;
+  const body = `Invoice #${bill.invoiceNo} • ₹${bill.billAmount}\nAllocated to you. Tap to accept & deliver!`;
+
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, {
+            body: body,
+            icon: 'logo.png',
+            badge: 'logo.png',
+            vibrate: [500, 200, 500, 200, 800, 200, 500, 200, 800],
+            requireInteraction: true,
+            tag: `order-${bill.invoiceNo}`,
+            renotify: true,
+            data: { invoiceNo: bill.invoiceNo, flatNo: bill.flatNo, amount: bill.billAmount },
+            actions: [
+              { action: 'accept', title: '🚀 Accept & Ride' },
+              { action: 'view', title: '👁️ Open Order' }
+            ]
+          });
+        });
+      } else {
+        new Notification(title, {
+          body: body,
+          icon: 'logo.png',
+          requireInteraction: true
+        });
+      }
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission();
+    }
+  }
+}
+
+function testMobileLockScreenAlert() {
+  if (!('Notification' in window)) {
+    showToast('Notifications not supported in this browser.', 'warning');
+    return;
+  }
+
+  Notification.requestPermission().then(perm => {
+    if (perm !== 'granted') {
+      showToast('Please allow Notification permissions to test lock screen alerts!', 'danger');
+      return;
+    }
+
+    showToast('⏳ Alert scheduled in 5 seconds! Lock your phone or switch apps now...', 'warning');
+
+    let countdown = 5;
+    const interval = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        showToast(`⏰ Lock your phone now: ${countdown}s remaining...`, 'info');
+      } else {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    setTimeout(() => {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification('🚨 LOCK-SCREEN ALERT: Delivery Order Ready!', {
+            body: 'Flat B-402 • ₹1,250 • rad. Express\nPhone was locked or away. Alert triggered successfully!',
+            icon: 'logo.png',
+            badge: 'logo.png',
+            vibrate: [500, 200, 500, 200, 800, 200, 500, 200, 800],
+            requireInteraction: true,
+            tag: 'test-lockscreen-alert',
+            renotify: true,
+            data: { invoiceNo: 'TEST-LOCK' },
+            actions: [
+              { action: 'accept', title: '🚀 Accept & Ride' },
+              { action: 'view', title: '👁️ Open Order' }
+            ]
+          });
+        });
+      } else {
+        new Notification('🚨 LOCK-SCREEN ALERT: Delivery Order Ready!', {
+          body: 'Flat B-402 • ₹1,250 • rad. Express\nPhone was locked or away. Alert triggered successfully!',
+          icon: 'logo.png',
+          requireInteraction: true
+        });
+      }
+
+      if ('vibrate' in navigator) {
+        navigator.vibrate([500, 200, 500, 200, 800, 200, 500, 200, 800]);
+      }
+      playLoudAlarmSound();
+      showToast('🔔 Lock-screen alert triggered successfully!', 'success');
+    }, 5000);
+  });
+}
+
+// Service Worker Message Dispatcher for Lock Screen Click Handlers
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (!event.data) return;
+    const { type, invoiceNo } = event.data;
+    if (invoiceNo && invoiceNo !== 'TEST-LOCK') {
+      if (type === 'ACCEPT_DELIVERY_ORDER') {
+        quickClaimOrder(invoiceNo);
+        openBillDetailModal(invoiceNo);
+      } else if (type === 'FOCUS_DELIVERY_ORDER') {
+        openBillDetailModal(invoiceNo);
+      }
+    }
+  });
 }
 
 
