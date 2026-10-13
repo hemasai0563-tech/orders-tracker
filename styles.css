@@ -2661,13 +2661,14 @@ body.theme-light .nav-item.active .nav-label {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 50% 25%, rgba(5, 150, 105, 0.08) 0%, rgba(241, 245, 249, 0.96) 80%);
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at 50% 25%, #f8fafc 0%, #e2e8f0 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 9999;
   padding: 16px;
-  backdrop-filter: blur(16px);
 }
 
 .auth-card {
